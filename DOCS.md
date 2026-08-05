@@ -36,8 +36,22 @@ Die offizielle "OpenAI Conversation"-Integration von Home Assistant unterstützt
 4. Unter **Einstellungen → Geräte & Dienste → Integration hinzufügen → Extended OpenAI Conversation**:
    - **Base URL**: `http://<ai-gateway-hostname>:4000/v1`
    - **API Key**: der `gateway_master_key`, den du unten in der Add-on-Konfiguration gesetzt hast
-   - **Model**: `assistant` (Name aus der generierten LiteLLM-Config)
+   - **Model**: ein beliebiger Wert, z. B. `assistant` — das Feld wird vom AI Gateway ohnehin überschrieben, es entscheidet selbst anhand von Kaskade/Override, welcher Provider tatsächlich antwortet
 5. Unter **Einstellungen → Sprachassistenten** eine Pipeline anlegen/bearbeiten und als Conversation Agent "Extended OpenAI Conversation" wählen
+
+### 4. Optional: manuellen Hart-Wechsel einrichten
+
+Standardmäßig läuft die automatische Kaskade (Gemini → Groq → OpenRouter → Ollama). Willst du live erzwingen können, welcher Provider gerade antwortet, lege einmalig einen Dropdown-Helfer an:
+
+1. **Einstellungen → Geräte & Dienste → Helfer → Helfer hinzufügen → Dropdown**
+2. Entity-ID: `input_select.ai_gateway_provider_override` (oder eine andere — dann `provider_override_entity_id` unten anpassen)
+3. Optionen exakt so anlegen: `Automatisch (Kaskade)`, `Gemini`, `Groq`, `OpenRouter`, `Ollama (lokal)`
+
+Das Add-on fragt diesen Helfer alle paar Sekunden ab. Steht er auf einem bestimmten Provider, wird **kein** automatischer Fallback mehr versucht, selbst wenn dieser Provider gerade fehlschlägt — das ist der Sinn des harten Wechsels. Steht er auf "Automatisch" (oder fehlt/ist nicht verfügbar), läuft die normale Kaskade wie gewohnt.
+
+### 5. Optional: Grafana-Dashboard mit Anfragen, Tokens, Antwortzeit
+
+Im selben Repo liegt ein eigenständiger docker-compose-Stack unter [`metrics/`](metrics/README.md) (Postgres + Grafana + kleiner Log-Receiver) — läuft auf eurem Docker-Host, nicht auf der HA-OS-Box. Dort einrichten, dann unten `metrics_webhook_url` und optional `metrics_db_url` eintragen.
 
 ## Add-on-Konfiguration
 
@@ -50,6 +64,9 @@ Die offizielle "OpenAI Conversation"-Integration von Home Assistant unterstützt
 | `gateway_master_key` | Beliebiges Passwort — schützt den Gateway-Endpunkt im internen Netz und wird als "API Key" in Extended OpenAI Conversation eingetragen |
 | `model_gemini` / `model_groq` / `model_openrouter` / `model_ollama` | Welches Modell je Anbieter genutzt wird (Defaults sind ein sinnvoller Startpunkt, Verfügbarkeit ändert sich gelegentlich — bei Bedarf anpassen) |
 | `status_sensor_entity_id` | Entity-ID des Status-Sensors in HA (Standard: `sensor.ai_gateway_active_provider`) |
+| `provider_override_entity_id` | Entity-ID des Dropdown-Helfers für den Hart-Wechsel (Standard: `input_select.ai_gateway_provider_override`) |
+| `metrics_webhook_url` | URL des Log-Receivers aus `metrics/` (z. B. `http://<docker-host>:8090/log`), optional — leer heißt kein Logging |
+| `metrics_db_url` | Vollständige Postgres-URL aus `metrics/` für die Kennzahlen-Sensoren, optional |
 
 Mindestens **ein** Provider (Cloud-Key oder `ollama_url`) muss gesetzt sein, sonst startet der Proxy nicht.
 
@@ -57,12 +74,19 @@ Mindestens **ein** Provider (Cloud-Key oder `ollama_url`) muss gesetzt sein, son
 
 Das Add-on legt automatisch die Entity `sensor.ai_gateway_active_provider` in Home Assistant an (Name über `status_sensor_entity_id` änderbar) und aktualisiert sie jede Minute:
 
-- **State**: aktuell aktiver Provider (z. B. `assistant` = Gemini, `assistant-groq`, `assistant-local` = Ollama)
+- **State**: das tatsächlich verwendete Modell des aktiven Providers (z. B. `gemini/gemini-2.0-flash`, `groq/llama-3.3-70b-versatile` — LiteLLM meldet hier die konkrete Modell-Kennung, nicht unseren internen Alias)
 - **Attribut `failed_providers`**: welche Provider gerade nicht erreichbar sind / deren Kontingent aufgebraucht ist
+- **Attribut `override`**: aktueller Stand des Hart-Wechsel-Helfers (`Automatisch (Kaskade)` oder ein konkreter Provider)
 - **Attribut `last_error`**: letzte Fehlermeldung, falls der Gateway selbst nicht erreichbar war
 
-Diese Entity lässt sich wie jeder andere Sensor auf einem Dashboard anzeigen oder für eine Benachrichtigung nutzen (z. B. "benachrichtige mich, wenn `failed_providers` nicht leer ist").
+Ist `metrics_db_url` gesetzt, kommen zusätzlich diese Sensoren dazu (Kennzahlen für den laufenden Tag):
+
+- `sensor.ai_gateway_requests_today`
+- `sensor.ai_gateway_tokens_today`
+- `sensor.ai_gateway_avg_latency_ms`
+
+Alle diese Entities lassen sich wie jeder andere Sensor auf einem Dashboard anzeigen oder für eine Benachrichtigung nutzen (z. B. "benachrichtige mich, wenn `failed_providers` nicht leer ist").
 
 ## Sicherheit
 
-Das Add-on gibt **keinen** externen Port frei — es ist absichtlich nur aus dem internen Home-Assistant-Netz erreichbar, nicht vom LAN. Der `gateway_master_key` ist eine zusätzliche Zugriffsschranke innerhalb dieses internen Netzes.
+Das Add-on gibt **keinen** externen Port frei — es ist absichtlich nur aus dem internen Home-Assistant-Netz erreichbar, nicht vom LAN. Der `gateway_master_key` ist eine zusätzliche Zugriffsschranke innerhalb dieses internen Netzes. Die vollen Gesprächsinhalte landen (sofern `metrics_webhook_url` gesetzt ist) im Klartext in der `metrics`-Postgres — das ist bewusst so gewünscht, aber diese Datenbank entsprechend absichern (nicht offen ins Internet stellen).

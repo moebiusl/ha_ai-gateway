@@ -2,6 +2,7 @@
 set -e
 
 export PORT="${PORT:-4000}"
+export LITELLM_INTERNAL_PORT="${LITELLM_INTERNAL_PORT:-4001}"
 
 load_token_file() {
   if [ -z "$SUPERVISOR_TOKEN" ] && [ -f "$1" ]; then
@@ -27,13 +28,19 @@ python3 build_litellm_config.py
 python3 status_push.py &
 STATUS_PID=$!
 
-litellm --config /tmp/litellm-config.yaml --port "$PORT" --host 0.0.0.0 &
+# LiteLLM selbst ist nur intern erreichbar (127.0.0.1) - router.py ist der
+# einzige nach aussen exponierte Port und entscheidet je Anfrage, welchen
+# Provider LiteLLM bedienen soll (Automatik-Kaskade oder harter Override).
+litellm --config /app/litellm-config.yaml --port "$LITELLM_INTERNAL_PORT" --host 127.0.0.1 &
 LITELLM_PID=$!
 
+python3 router.py &
+ROUTER_PID=$!
+
 shutdown() {
-  kill "$STATUS_PID" "$LITELLM_PID" 2>/dev/null || true
+  kill "$STATUS_PID" "$LITELLM_PID" "$ROUTER_PID" 2>/dev/null || true
 }
 trap shutdown TERM INT
 
-wait "$LITELLM_PID"
+wait "$ROUTER_PID"
 shutdown

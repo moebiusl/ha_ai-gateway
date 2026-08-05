@@ -1,0 +1,81 @@
+{
+  "title": "AI Gateway",
+  "uid": "ai-gateway-overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Anfragen über Zeit (je Provider)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "ai-gateway-postgres" },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT $__timeGroup(ts, '$__interval') AS time, provider, COUNT(*) AS requests FROM requests WHERE $__timeFilter(ts) GROUP BY 1, 2 ORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Tokens pro Modell",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "ai-gateway-postgres" },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT provider, SUM(tokens_in + tokens_out) AS tokens FROM requests WHERE $__timeFilter(ts) GROUP BY provider ORDER BY tokens DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Ø Antwortzeit pro Modell (ms)",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "postgres", "uid": "ai-gateway-postgres" },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT provider, ROUND(AVG(latency_ms)) AS avg_latency_ms FROM requests WHERE $__timeFilter(ts) GROUP BY provider ORDER BY avg_latency_ms",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Fehlerquote pro Modell",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "postgres", "uid": "ai-gateway-postgres" },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT provider, COUNT(*) FILTER (WHERE NOT success) AS fehler FROM requests WHERE $__timeFilter(ts) GROUP BY provider ORDER BY fehler DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Letzte Anfragen (Trigger, Antwort, Tokens, Dauer)",
+      "type": "table",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "postgres", "uid": "ai-gateway-postgres" },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT ts AS \"Zeit\", provider AS \"Provider\", trigger AS \"Ausgelöst durch\", response AS \"Antwort\", tokens_in AS \"Tokens ein\", tokens_out AS \"Tokens aus\", latency_ms AS \"Dauer (ms)\", success AS \"Erfolgreich\" FROM requests ORDER BY ts DESC LIMIT 200",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

@@ -17,6 +17,8 @@ if os.path.exists("/data/options.json"):
 
 MASTER_KEY = str(OPTIONS.get("gateway_master_key") or "").strip()
 ENTITY_ID = str(OPTIONS.get("status_sensor_entity_id") or "sensor.ai_gateway_active_provider").strip()
+OVERRIDE_ENTITY_ID = str(OPTIONS.get("provider_override_entity_id") or "input_select.ai_gateway_provider_override").strip()
+METRICS_DB_URL = str(OPTIONS.get("metrics_db_url") or "").strip()
 
 
 def check_health():
@@ -46,7 +48,23 @@ def summarize(health_payload):
     return active, failed
 
 
-def push_state(state, failed_providers, error):
+def read_override_state():
+    if not SUPERVISOR_TOKEN:
+        return None
+    try:
+        response = requests.get(
+            f"{HA_STATES_URL}/{OVERRIDE_ENTITY_ID}",
+            headers={"Authorization": f"Bearer {SUPERVISOR_TOKEN}"},
+            timeout=10,
+        )
+        if response.status_code == 200:
+            return response.json().get("state")
+    except Exception:  # noqa: BLE001 - Override-Anzeige ist rein informativ
+        pass
+    return None
+
+
+def push_state(state, failed_providers, error, override_state):
     if not SUPERVISOR_TOKEN:
         print("SUPERVISOR_TOKEN fehlt, kann Status nicht nach HA pushen.", flush=True)
         return
@@ -55,6 +73,7 @@ def push_state(state, failed_providers, error):
         "friendly_name": "AI Gateway aktiver Provider",
         "icon": "mdi:robot",
         "failed_providers": failed_providers,
+        "override": override_state or "Automatisch (Kaskade)",
         "last_checked": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     }
     if error:
@@ -71,11 +90,79 @@ def push_state(state, failed_providers, error):
         print(f"Konnte Status nicht nach HA pushen: {error}", flush=True)
 
 
+def push_metric(entity_id, state, unit, friendly_name, icon):
+    if not SUPERVISOR_TOKEN:
+        return
+    payload = {
+        "state": state,
+        "attributes": {
+            "friendly_name": friendly_name,
+            "icon": icon,
+            "unit_of_measurement": unit,
+        },
+    }
+    headers = {
+        "Authorization": f"Bearer {SUPERVISOR_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    try:
+        requests.post(f"{HA_STATES_URL}/{entity_id}", headers=headers, json=payload, timeout=10)
+    except Exception as error:  # noqa: BLE001 - Push-Fehler sollen die Schleife nicht stoppen
+        print(f"Konnte {entity_id} nicht pushen: {error}", flush=True)
+
+
+def push_metrics_from_db():
+    """Fragt die metrics-Postgres (separater docker-compose-Stack, siehe
+    metrics/) nach Kennzahlen fuer heute und pusht sie als HA-Sensoren.
+    Ohne metrics_db_url wird dieser Schritt einfach uebersprungen."""
+    if not METRICS_DB_URL:
+        return
+
+    try:
+        import psycopg2  # lokal importiert, da optional
+    except ImportError:
+        print("psycopg2 nicht verfuegbar, kann metrics_db_url nicht abfragen.", flush=True)
+        return
+
+    try:
+        connection = psycopg2.connect(METRICS_DB_URL, connect_timeout=10)
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        COUNT(*),
+                        COALESCE(SUM(tokens_in + tokens_out), 0),
+                        COALESCE(AVG(latency_ms), 0)
+                    FROM requests
+                    WHERE ts >= date_trunc('day', now())
+                    """
+                )
+                request_count, total_tokens, avg_latency = cursor.fetchone()
+        finally:
+            connection.close()
+    except Exception as error:  # noqa: BLE001 - DB-Fehler sollen die Schleife nicht stoppen
+        print(f"Konnte metrics-Datenbank nicht abfragen: {error}", flush=True)
+        return
+
+    push_metric("sensor.ai_gateway_requests_today", request_count, "Anfragen", "AI Gateway Anfragen heute", "mdi:counter")
+    push_metric("sensor.ai_gateway_tokens_today", total_tokens, "Tokens", "AI Gateway Tokens heute", "mdi:counter")
+    push_metric(
+        "sensor.ai_gateway_avg_latency_ms",
+        round(float(avg_latency), 0),
+        "ms",
+        "AI Gateway Ø Antwortzeit",
+        "mdi:timer-outline",
+    )
+
+
 def main():
     while True:
         health_payload, error = check_health()
         active, failed = summarize(health_payload)
-        push_state(active or "nicht erreichbar", failed, error)
+        override_state = read_override_state()
+        push_state(active or "nicht erreichbar", failed, error, override_state)
+        push_metrics_from_db()
         time.sleep(POLL_INTERVAL_SECONDS)
 
 
