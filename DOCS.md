@@ -6,7 +6,7 @@ Dieses Add-on ersetzt **nicht** Assist selbst, sondern den "Conversation Agent" 
 
 ## Was du selbst einrichten musst
 
-Das Add-on allein reicht nicht — es müssen noch drei Dinge dazukommen, die sich nicht per Add-on automatisieren lassen:
+Das Add-on allein reicht nicht — es müssen noch drei Dinge dazukommen, die sich nicht per Add-on automatisieren lassen (plus zwei optionale Erweiterungen):
 
 ### 1. Kostenlose API-Keys besorgen (so viele wie du willst, auch nur einer reicht)
 

@@ -5,7 +5,7 @@ import time
 import httpx
 import uvicorn
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from providers import AUTO_LABEL, configured_providers, label_to_provider_key, model_name_for
 
@@ -94,6 +94,11 @@ async def chat_completions(request: Request):
     if auth:
         forward_headers["authorization"] = auth
 
+    if body.get("stream"):
+        return await proxy_streaming_response(
+            f"{LITELLM_BASE_URL}/v1/chat/completions", body, forward_headers
+        )
+
     try:
         async with httpx.AsyncClient(timeout=120) as client:
             upstream = await client.post(
@@ -109,6 +114,33 @@ async def chat_completions(request: Request):
         status_code=upstream.status_code,
         media_type=upstream.headers.get("content-type", "application/json"),
     )
+
+
+async def proxy_streaming_response(url, body, headers):
+    """Echtes Streaming-Passthrough fuer stream:true-Anfragen (SSE). Der
+    Status-Code steht schon nach den Response-Headern fest, bevor der Body
+    ausgelesen wird - deshalb der Umweg ueber manuelles __aenter__/__aexit__
+    statt eines einfachen `async with`, das den ganzen Body puffern wuerde."""
+    client = httpx.AsyncClient(timeout=120)
+    stream_cm = client.stream("POST", url, content=json.dumps(body), headers=headers)
+    try:
+        upstream = await stream_cm.__aenter__()
+    except httpx.HTTPError as error:
+        await client.aclose()
+        return JSONResponse(status_code=502, content={"error": f"LiteLLM nicht erreichbar: {error}"})
+
+    status_code = upstream.status_code
+    media_type = upstream.headers.get("content-type", "text/event-stream")
+
+    async def body_iterator():
+        try:
+            async for chunk in upstream.aiter_bytes():
+                yield chunk
+        finally:
+            await stream_cm.__aexit__(None, None, None)
+            await client.aclose()
+
+    return StreamingResponse(body_iterator(), status_code=status_code, media_type=media_type)
 
 
 @app.get("/v1/models")
