@@ -1,4 +1,4 @@
-"""LiteLLM-Proxy-Callback fuers Logging in den metrics/-Stack.
+"""LiteLLM-Proxy-Callback fuers Logging in Postgres (metrics_db_url).
 
 Der eingebaute "generic_api"-Callback von LiteLLM ist eine
 Enterprise-Funktion (Lizenzpflicht) - das ist beim Testen aufgefallen.
@@ -8,6 +8,10 @@ litellm_settings.callbacks: custom_callback.proxy_handler_instance
 in der generierten litellm-config.yaml registriert (siehe
 build_litellm_config.py). Muss laut LiteLLM-Doku im selben Verzeichnis
 wie die config.yaml liegen.
+
+Postet an die lokale /internal/metrics-log-Route von router.py (selber
+Container, kein externer Receiver mehr noetig) - die schreibt dann in die
+per metrics_db_url konfigurierte Postgres (z.B. das expaso-Postgres-Add-on).
 """
 
 import json
@@ -18,17 +22,19 @@ import httpx
 from litellm.integrations.custom_logger import CustomLogger
 
 OPTIONS_PATH = "/data/options.json"
+ROUTER_PORT = os.environ.get("PORT", "4000")
+METRICS_LOG_URL = f"http://127.0.0.1:{ROUTER_PORT}/internal/metrics-log"
 
 
-def _read_metrics_webhook_url():
+def _metrics_enabled():
     if not os.path.exists(OPTIONS_PATH):
-        return ""
+        return False
     try:
         with open(OPTIONS_PATH, "r", encoding="utf-8") as handle:
             options = json.load(handle)
-        return str(options.get("metrics_webhook_url") or "").strip()
+        return bool(str(options.get("metrics_db_url") or "").strip())
     except Exception:  # noqa: BLE001
-        return ""
+        return False
 
 
 def _get(obj, key, default=None):
@@ -68,14 +74,13 @@ def _iso(ts):
 
 class MetricsWebhookLogger(CustomLogger):
     async def _send(self, payload):
-        webhook_url = _read_metrics_webhook_url()
-        if not webhook_url:
+        if not _metrics_enabled():
             return
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                await client.post(webhook_url, json=payload)
+                await client.post(METRICS_LOG_URL, json=payload)
         except Exception as error:  # noqa: BLE001 - Logging darf den Request nicht stoeren
-            print(f"[metrics] Konnte Anfrage nicht an {webhook_url} loggen: {error}", flush=True)
+            print(f"[metrics] Konnte Anfrage nicht an {METRICS_LOG_URL} loggen: {error}", flush=True)
 
     async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
         payload = {

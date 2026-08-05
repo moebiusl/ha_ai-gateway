@@ -1,6 +1,6 @@
 name: "AI Gateway"
 description: "Kostenloser, kaskadierender Assist-Ersatz: Gemini/Groq/OpenRouter-Freikontingente mit automatischem Fallback auf lokales Ollama."
-version: "0.3.1"
+version: "0.4.0"
 slug: "ai_gateway"
 init: false
 
@@ -26,7 +26,6 @@ options:
   model_ollama: "qwen2.5:7b"
   status_sensor_entity_id: "sensor.ai_gateway_active_provider"
   provider_override_entity_id: "input_select.ai_gateway_provider_override"
-  metrics_webhook_url: ""
   metrics_db_url: ""
 
 schema:
@@ -41,5 +40,4 @@ schema:
   model_ollama: str?
   status_sensor_entity_id: str?
   provider_override_entity_id: str?
-  metrics_webhook_url: str?
   metrics_db_url: str?

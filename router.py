@@ -1,8 +1,11 @@
 import json
 import os
 import time
+from datetime import datetime
 
 import httpx
+import psycopg2
+import psycopg2.extras
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -14,6 +17,24 @@ LITELLM_BASE_URL = f"http://127.0.0.1:{LITELLM_INTERNAL_PORT}"
 ROUTER_PORT = int(os.environ.get("PORT", "4000"))
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 OVERRIDE_POLL_SECONDS = 10
+
+METRICS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS requests (
+    id BIGSERIAL PRIMARY KEY,
+    ts TIMESTAMPTZ NOT NULL DEFAULT now(),
+    provider TEXT NOT NULL,
+    trigger TEXT,
+    messages JSONB,
+    response TEXT,
+    tokens_in INTEGER NOT NULL DEFAULT 0,
+    tokens_out INTEGER NOT NULL DEFAULT 0,
+    latency_ms INTEGER,
+    success BOOLEAN NOT NULL DEFAULT true,
+    error TEXT
+);
+CREATE INDEX IF NOT EXISTS requests_ts_idx ON requests (ts DESC);
+CREATE INDEX IF NOT EXISTS requests_provider_idx ON requests (provider);
+"""
 
 OPTIONS_PATH = "/data/options.json"
 
@@ -28,8 +49,31 @@ def read_options():
 OPTIONS = read_options()
 AVAILABLE_PROVIDERS = configured_providers(OPTIONS)
 OVERRIDE_ENTITY_ID = str(OPTIONS.get("provider_override_entity_id") or "").strip() or "input_select.ai_gateway_provider_override"
+METRICS_DB_URL = str(OPTIONS.get("metrics_db_url") or "").strip()
 
 app = FastAPI()
+
+
+def ensure_metrics_schema():
+    """Legt die requests-Tabelle an, falls metrics_db_url gesetzt ist. Laeuft
+    beim Start; ein nicht erreichbares/falsch konfiguriertes Postgres darf das
+    Add-on nicht zum Absturz bringen - Metrics sind immer optional."""
+    if not METRICS_DB_URL:
+        return
+    try:
+        connection = psycopg2.connect(METRICS_DB_URL, connect_timeout=10)
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(METRICS_SCHEMA)
+            connection.commit()
+        finally:
+            connection.close()
+        print("Metrics-Schema geprueft/angelegt.", flush=True)
+    except Exception as error:  # noqa: BLE001
+        print(f"Konnte Metrics-Schema nicht anlegen (metrics_db_url pruefen): {error}", flush=True)
+
+
+ensure_metrics_schema()
 
 _override_cache = {"label": AUTO_LABEL, "checked_at": 0.0}
 
@@ -175,6 +219,119 @@ async def list_models(request: Request):
         status_code=upstream.status_code,
         media_type=upstream.headers.get("content-type", "application/json"),
     )
+
+
+def extract_trigger(messages):
+    if not isinstance(messages, list):
+        return None
+    for message in reversed(messages):
+        if isinstance(message, dict) and message.get("role") == "user":
+            content = message.get("content")
+            return content if isinstance(content, str) else str(content)
+    return None
+
+
+def extract_response_text(response):
+    if response is None:
+        return None
+    if isinstance(response, str):
+        return response
+    if isinstance(response, dict):
+        choices = response.get("choices")
+        if isinstance(choices, list) and choices:
+            first = choices[0]
+            if isinstance(first, dict):
+                message = first.get("message") or {}
+                if isinstance(message, dict) and message.get("content"):
+                    return message["content"]
+                if first.get("text"):
+                    return first["text"]
+    return str(response)
+
+
+def parse_timestamp(value):
+    if not value:
+        return None
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value)
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def compute_latency_ms(payload):
+    start = parse_timestamp(payload.get("startTime") or payload.get("start_time"))
+    end = parse_timestamp(payload.get("endTime") or payload.get("end_time"))
+    if start and end:
+        return max(0, int((end - start).total_seconds() * 1000))
+    duration = payload.get("response_time") or payload.get("duration_ms")
+    if isinstance(duration, (int, float)):
+        return int(duration)
+    return None
+
+
+def is_failure(payload):
+    if payload.get("exception") or payload.get("error"):
+        return True
+    status = payload.get("status") or (payload.get("metadata") or {}).get("status")
+    if isinstance(status, str) and "fail" in status.lower():
+        return True
+    event_type = payload.get("event_type") or payload.get("call_type")
+    if isinstance(event_type, str) and "fail" in event_type.lower():
+        return True
+    return False
+
+
+@app.post("/internal/metrics-log")
+async def metrics_log(request: Request):
+    """Empfaengt die Payload von custom_callback.py und schreibt eine Zeile
+    in die metrics_db_url-Postgres. Nur lokal erreichbar (127.0.0.1), kein
+    Auth noetig - laeuft im selben Container wie der Aufrufer."""
+    if not METRICS_DB_URL:
+        return JSONResponse(status_code=204, content=None)
+
+    payload = await request.json()
+
+    usage = payload.get("usage") or {}
+    tokens_in = usage.get("prompt_tokens") or usage.get("promptTokens") or 0
+    tokens_out = usage.get("completion_tokens") or usage.get("completionTokens") or 0
+
+    failure = is_failure(payload)
+    error_message = None
+    if failure:
+        error_message = str(payload.get("exception") or payload.get("error") or "unbekannter Fehler")
+
+    row = (
+        payload.get("model") or "unbekannt",
+        extract_trigger(payload.get("messages")),
+        psycopg2.extras.Json(payload.get("messages")) if payload.get("messages") is not None else None,
+        extract_response_text(payload.get("response")),
+        int(tokens_in) if tokens_in else 0,
+        int(tokens_out) if tokens_out else 0,
+        compute_latency_ms(payload),
+        not failure,
+        error_message,
+    )
+
+    try:
+        connection = psycopg2.connect(METRICS_DB_URL, connect_timeout=10)
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO requests (provider, trigger, messages, response, tokens_in, tokens_out, latency_ms, success, error)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    row,
+                )
+            connection.commit()
+        finally:
+            connection.close()
+    except Exception as error:  # noqa: BLE001 - Logging darf den eigentlichen Request nicht stoeren
+        return JSONResponse(status_code=502, content={"ok": False, "error": str(error)})
+
+    return {"ok": True}
 
 
 @app.get("/health")

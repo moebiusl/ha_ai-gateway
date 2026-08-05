@@ -51,7 +51,16 @@ Das Add-on fragt diesen Helfer alle paar Sekunden ab. Steht er auf einem bestimm
 
 ### 5. Optional: Grafana-Dashboard mit Anfragen, Tokens, Antwortzeit
 
-Im selben Repo liegt ein eigenständiger docker-compose-Stack unter [`metrics/`](metrics/README.md) (Postgres + Grafana + kleiner Log-Receiver) — läuft auf eurem Docker-Host, nicht auf der HA-OS-Box. Dort einrichten, dann unten `metrics_webhook_url` und optional `metrics_db_url` eintragen.
+Läuft komplett als Home-Assistant-Add-ons mit — dadurch über denselben Weg erreichbar wie HA selbst (z. B. per VPN), kein separater Host/Port nötig.
+
+1. **Postgres-Add-on installieren**: Repository `https://github.com/expaso/hassos-addons` hinzufügen, das PostgreSQL-Add-on installieren, Admin-Zugangsdaten (Nutzer/Passwort/Datenbank) in dessen Konfiguration vergeben, starten.
+2. **Grafana-Add-on installieren**: Repository `https://github.com/hassio-addons/addon-grafana` hinzufügen, installieren, starten. Erscheint danach mit Ingress in der HA-Seitenleiste — Login läuft automatisch über HA (kein separates Passwort nötig).
+3. Im AI-Gateway-Add-on unten `metrics_db_url` eintragen, z. B. `postgresql://<user>:<passwort>@<postgres-addon-hostname>:5432/<db>` (Hostname steht wie bei Ollama auf der Info-Seite des Postgres-Add-ons). AI Gateway legt die benötigte Tabelle beim Start selbst an.
+4. In Grafana (über die Seitenleiste öffnen) einmalig:
+   - **Datenquelle hinzufügen** → PostgreSQL → dieselben Zugangsdaten wie in Schritt 3
+   - **Dashboard importieren** → die Datei [`grafana/ai-gateway-overview.json`](grafana/ai-gateway-overview.json) aus diesem Repo hochladen, die eben angelegte Datenquelle auswählen
+
+Das Dashboard zeigt danach Anfragen über Zeit, Tokens pro Modell, Ø-Antwortzeit, Fehlerquote und eine Tabelle mit jeder Anfrage inklusive auslösendem Prompt und voller Antwort.
 
 ## Add-on-Konfiguration
 
@@ -65,8 +74,7 @@ Im selben Repo liegt ein eigenständiger docker-compose-Stack unter [`metrics/`]
 | `model_gemini` / `model_groq` / `model_openrouter` / `model_ollama` | Welches Modell je Anbieter genutzt wird (Defaults sind ein sinnvoller Startpunkt, Verfügbarkeit ändert sich gelegentlich — bei Bedarf anpassen) |
 | `status_sensor_entity_id` | Entity-ID des Status-Sensors in HA (Standard: `sensor.ai_gateway_active_provider`) |
 | `provider_override_entity_id` | Entity-ID des Dropdown-Helfers für den Hart-Wechsel (Standard: `input_select.ai_gateway_provider_override`) |
-| `metrics_webhook_url` | URL des Log-Receivers aus `metrics/` (z. B. `http://<docker-host>:8090/log`), optional — leer heißt kein Logging |
-| `metrics_db_url` | Vollständige Postgres-URL aus `metrics/` für die Kennzahlen-Sensoren, optional |
+| `metrics_db_url` | Vollständige Postgres-URL des Postgres-Add-ons (siehe Schritt 5), optional — leer heißt kein Logging, keine Kennzahlen-Sensoren |
 
 Mindestens **ein** Provider (Cloud-Key oder `ollama_url`) muss gesetzt sein, sonst startet der Proxy nicht.
 
@@ -89,4 +97,4 @@ Alle diese Entities lassen sich wie jeder andere Sensor auf einem Dashboard anze
 
 ## Sicherheit
 
-Das Add-on gibt **keinen** externen Port frei — es ist absichtlich nur aus dem internen Home-Assistant-Netz erreichbar, nicht vom LAN. Der `gateway_master_key` ist eine zusätzliche Zugriffsschranke innerhalb dieses internen Netzes. Die vollen Gesprächsinhalte landen (sofern `metrics_webhook_url` gesetzt ist) im Klartext in der `metrics`-Postgres — das ist bewusst so gewünscht, aber diese Datenbank entsprechend absichern (nicht offen ins Internet stellen).
+Das Add-on gibt **keinen** externen Port frei — es ist absichtlich nur aus dem internen Home-Assistant-Netz erreichbar, nicht vom LAN. Der `gateway_master_key` ist eine zusätzliche Zugriffsschranke innerhalb dieses internen Netzes. Die vollen Gesprächsinhalte landen (sofern `metrics_db_url` gesetzt ist) im Klartext in der Postgres-Datenbank — das ist bewusst so gewünscht, aber auch das Postgres-Add-on entsprechend absichern (Zugangsdaten nicht mit anderen Diensten teilen).

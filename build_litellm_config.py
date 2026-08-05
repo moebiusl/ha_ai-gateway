@@ -47,7 +47,7 @@ def clean(value):
 def main():
     options = read_options()
     master_key = clean(options.get("gateway_master_key"))
-    metrics_webhook_url = clean(options.get("metrics_webhook_url"))
+    metrics_db_url = clean(options.get("metrics_db_url"))
 
     available = configured_providers(options)
     if not available:
@@ -80,11 +80,11 @@ def main():
         litellm_settings["fallbacks"] = [{primary_name: fallback_chain}]
         litellm_settings["default_fallbacks"] = [fallback_chain[-1]]
 
-    if metrics_webhook_url:
+    if metrics_db_url:
         # Eigener CustomLogger statt des eingebauten "generic_api"-Callbacks -
         # letzterer ist eine LiteLLM-Enterprise-Funktion (Lizenzpflicht), das
-        # ist beim Testen aufgefallen. custom_callback.py liest
-        # metrics_webhook_url selbst aus /data/options.json.
+        # ist beim Testen aufgefallen. custom_callback.py postet lokal an
+        # router.py, das dann in metrics_db_url schreibt.
         litellm_settings["callbacks"] = "custom_callback.proxy_handler_instance"
 
     config = {

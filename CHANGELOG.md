@@ -1,3 +1,13 @@
+## 0.4.0
+
+### Grafana läuft jetzt als HA-Add-on statt separatem docker-compose-Stack
+- Grund: Zugriff auf HA läuft bei uns nur per VPN — ein separater Docker-Host für `metrics/` wäre darüber nicht ohne Weiteres erreichbar gewesen
+- `metrics/` (eigenes Postgres-Image, eigener Receiver-Container, eigene Grafana-Provisionierung) entfällt komplett
+- Stattdessen: bestehende Community-Add-ons installieren — [expaso/hassos-addons](https://github.com/expaso/hassos-addons) (Postgres) und [hassio-addons/addon-grafana](https://github.com/hassio-addons/addon-grafana) (Grafana, Ingress-fähig, dadurch direkt in der HA-Seitenleiste erreichbar — über denselben VPN-Zugang wie HA selbst)
+- Der Log-Receiver ist jetzt Teil von `router.py` (neue Route `/internal/metrics-log`, nur lokal erreichbar) statt eines eigenen Containers — legt die benötigte Tabelle beim Start auch selbst an, kein `init.sql`-Mounting mehr nötig
+- **Breaking**: Add-on-Option `metrics_webhook_url` entfällt ersatzlos, übrig bleibt nur `metrics_db_url`
+- Dashboard-JSON bleibt im Repo unter `grafana/ai-gateway-overview.json`, wird jetzt einmalig manuell in Grafana importiert statt automatisch provisioniert (zuverlässiger, da der genaue Mount-Pfad im Community-Add-on nicht von hier aus verifizierbar war)
+
 ## 0.3.1
 
 ### Fix: Groq lehnte Tool-Calls ab
