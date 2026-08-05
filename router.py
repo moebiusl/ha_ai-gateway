@@ -75,6 +75,21 @@ def resolve_target():
     return model_name_for(AVAILABLE_PROVIDERS[0]), False
 
 
+def normalize_tools(body):
+    """Extended OpenAI Conversation schickt Tool-Definitionen teils ohne das
+    Feld "type" auf oberster Ebene. Gemini/OpenAI tolerieren das, Groqs
+    Validierung ist strenger und lehnt die Anfrage komplett ab
+    ('tools.0.type' : property 'type' is missing). Fehlendes "type" ist in
+    der OpenAI-Tool-Spec ohnehin immer "function" - hier defensiv ergaenzen,
+    statt sich auf die Kulanz des jeweiligen Providers zu verlassen."""
+    tools = body.get("tools")
+    if not isinstance(tools, list):
+        return
+    for tool in tools:
+        if isinstance(tool, dict) and "type" not in tool:
+            tool["type"] = "function"
+
+
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
     model_name, hard_override = resolve_target()
@@ -83,6 +98,7 @@ async def chat_completions(request: Request):
 
     body = await request.json()
     body["model"] = model_name
+    normalize_tools(body)
     if hard_override:
         # Harter Wechsel: bewusst kein automatisches Weiterreichen an den
         # naechsten Provider in der Kaskade, auch wenn der gewaehlte Provider

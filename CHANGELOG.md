@@ -1,3 +1,10 @@
+## 0.3.1
+
+### Fix: Groq lehnte Tool-Calls ab
+- Extended OpenAI Conversation schickt Tool-Definitionen teils ohne das Feld `type` auf oberster Ebene — Gemini toleriert das, Groq nicht (`'tools.0.type' : property 'type' is missing`, 400 Bad Request)
+- `router.py` ergänzt jetzt defensiv `"type": "function"`, wenn es fehlt, bevor die Anfrage weitergereicht wird
+- Gefunden beim ersten echten Deployment: zusätzlich lagen ein falsch eingetragener `ollama_url`-Wert (Beispiel-Hostname statt der echten Add-on-Adresse) und ein Gemini-Konto ohne Gratis-Kontingent vor — beides nutzerseitige Konfiguration, kein Code-Fix nötig
+
 ## 0.3.0
 
 ### Offene Punkte geschlossen
