@@ -1,3 +1,10 @@
+## 0.5.7
+
+### Fix: "origin not allowed" - 0.5.6 hatte falsches Format fuer csrf_trusted_origins
+- Grafana-Quelle geprueft (`pkg/middleware/csrf/csrf.go`): der Wert wird an **Leerzeichen** gesplittet (nicht Komma) und nur der **reine Hostname ohne Schema/Port** wird verglichen (`url.Parse(origin).Hostname()`)
+- 0.5.6 hatte `"http://100.97.34.101:3001,https://monitoring-ha-bridge.unity-dev.de"` gesetzt - wurde als ein einziger, nie matchender Eintrag interpretiert
+- Jetzt korrekt: `GF_SECURITY_CSRF_TRUSTED_ORIGINS="100.97.34.101 monitoring-ha-bridge.unity-dev.de"`
+
 ## 0.5.6
 
 ### Fix: "origin not allowed" trotz gesetzter csrf_trusted_origins (0.5.5 reichte nicht)
