@@ -95,6 +95,13 @@ if [ "$ENABLE_METRICS" = "true" ]; then
   export GF_PATHS_LOGS=/data/grafana/logs
   export GF_PATHS_PLUGINS=/data/grafana/plugins
   mkdir -p "$GF_PATHS_DATA" "$GF_PATHS_LOGS" "$GF_PATHS_PLUGINS"
+
+  # Ohne root_url/csrf_trusted_origins vergleicht Grafanas CSRF-Check den
+  # Origin-Header (z.B. http://100.97.34.101:3001) gegen den Default
+  # localhost:3000 und lehnt Anfragen mit "origin not allowed" ab, weil
+  # der Zugriff ueber die Tailscale-Bridge auf Port 3001 laeuft.
+  export GF_SERVER_ROOT_URL="http://100.97.34.101:3001/"
+  export GF_SECURITY_CSRF_TRUSTED_ORIGINS="100.97.34.101:3001,monitoring-ha-bridge.unity-dev.de"
   if [ -n "$GRAFANA_ADMIN_PASSWORD" ]; then
     export GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_ADMIN_PASSWORD"
   fi
