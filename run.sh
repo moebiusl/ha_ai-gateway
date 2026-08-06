@@ -101,7 +101,7 @@ if [ "$ENABLE_METRICS" = "true" ]; then
   # localhost:3000 und lehnt Anfragen mit "origin not allowed" ab, weil
   # der Zugriff ueber die Tailscale-Bridge auf Port 3001 laeuft.
   export GF_SERVER_ROOT_URL="http://100.97.34.101:3001/"
-  export GF_SECURITY_CSRF_TRUSTED_ORIGINS="100.97.34.101:3001,monitoring-ha-bridge.unity-dev.de"
+  export GF_SECURITY_CSRF_TRUSTED_ORIGINS="http://100.97.34.101:3001,https://monitoring-ha-bridge.unity-dev.de"
   if [ -n "$GRAFANA_ADMIN_PASSWORD" ]; then
     export GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_ADMIN_PASSWORD"
   fi

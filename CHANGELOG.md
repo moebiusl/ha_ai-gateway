@@ -1,3 +1,9 @@
+## 0.5.6
+
+### Fix: "origin not allowed" trotz gesetzter csrf_trusted_origins (0.5.5 reichte nicht)
+- `csrf_trusted_origins` in 0.5.5 ohne Schema gesetzt (`100.97.34.101:3001`) - Grafanas URL-Parser liest den Teil vor dem ersten Doppelpunkt als Schema, eine IP-Adresse ist dafuer aber kein gueltiges Schema, wodurch der Eintrag nicht griff
+- Jetzt mit vollem Schema: `http://100.97.34.101:3001,https://monitoring-ha-bridge.unity-dev.de`
+
 ## 0.5.5
 
 ### Fix: Grafana-Dashboard zeigte "no default database" und danach "origin not allowed"
