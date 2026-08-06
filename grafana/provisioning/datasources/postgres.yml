@@ -10,6 +10,7 @@ datasources:
     database: ai_gateway
     isDefault: true
     jsonData:
+      database: ai_gateway
       sslmode: disable
       postgresVersion: 1500
       timescaledb: false
