@@ -46,33 +46,44 @@ if [ "$ENABLE_METRICS" = "true" ]; then
 
   PG_BIN="$(find /usr/lib/postgresql -maxdepth 2 -name bin -type d | sort | tail -1)"
   PGDATA=/data/postgres
+  echo "Postgres-Binaries: ${PG_BIN:-<nicht gefunden>}"
   mkdir -p "$PGDATA"
   chown -R postgres:postgres "$PGDATA"
 
   if [ ! -s "$PGDATA/PG_VERSION" ]; then
     echo "Initialisiere Postgres-Datenverzeichnis..."
     su postgres -c "$PG_BIN/initdb -D $PGDATA" >/tmp/initdb.log 2>&1
+    if [ ! -s "$PGDATA/PG_VERSION" ]; then
+      echo "initdb fehlgeschlagen, Ausgabe:" >&2
+      cat /tmp/initdb.log >&2
+    fi
   fi
 
   su postgres -c "$PG_BIN/pg_ctl -D $PGDATA -l /data/postgres.log -o '-p 5432 -h 127.0.0.1' start"
-  PG_PID_FILE="$PGDATA/postmaster.pid"
+  PG_START_STATUS=$?
+  if [ "$PG_START_STATUS" -ne 0 ]; then
+    echo "pg_ctl start ist mit Code $PG_START_STATUS fehlgeschlagen, /data/postgres.log:" >&2
+    cat /data/postgres.log >&2 2>/dev/null
+  fi
 
   i=0
   until su postgres -c "$PG_BIN/pg_isready -h 127.0.0.1 -p 5432" >/dev/null 2>&1; do
     i=$((i + 1))
     if [ "$i" -ge 30 ]; then
-      echo "Postgres nach 30s nicht bereit - Metrics evtl. nicht nutzbar." >&2
+      echo "Postgres nach 30s nicht bereit - Metrics evtl. nicht nutzbar. /data/postgres.log:" >&2
+      cat /data/postgres.log >&2 2>/dev/null
       break
     fi
     sleep 1
   done
 
-  su postgres -c "psql -h 127.0.0.1 -p 5432 -tAc \"SELECT 1 FROM pg_roles WHERE rolname='ai_gateway'\"" | grep -q 1 \
-    || su postgres -c "psql -h 127.0.0.1 -p 5432 -c \"CREATE ROLE ai_gateway LOGIN PASSWORD 'ai-gateway-internal'\""
-  su postgres -c "psql -h 127.0.0.1 -p 5432 -tAc \"SELECT 1 FROM pg_database WHERE datname='ai_gateway'\"" | grep -q 1 \
-    || su postgres -c "createdb -h 127.0.0.1 -p 5432 -O ai_gateway ai_gateway"
-
-  echo "Postgres laeuft (intern, Port 5432)."
+  if su postgres -c "$PG_BIN/pg_isready -h 127.0.0.1 -p 5432" >/dev/null 2>&1; then
+    su postgres -c "psql -h 127.0.0.1 -p 5432 -tAc \"SELECT 1 FROM pg_roles WHERE rolname='ai_gateway'\"" | grep -q 1 \
+      || su postgres -c "psql -h 127.0.0.1 -p 5432 -c \"CREATE ROLE ai_gateway LOGIN PASSWORD 'ai-gateway-internal'\""
+    su postgres -c "psql -h 127.0.0.1 -p 5432 -tAc \"SELECT 1 FROM pg_database WHERE datname='ai_gateway'\"" | grep -q 1 \
+      || su postgres -c "createdb -h 127.0.0.1 -p 5432 -O ai_gateway ai_gateway"
+    echo "Postgres laeuft (intern, Port 5432)."
+  fi
 
   # Debians grafana-Paket hat "provisioning = conf/provisioning" nur
   # auskommentiert in der grafana.ini stehen (relativ, nicht unser

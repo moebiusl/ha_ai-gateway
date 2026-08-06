@@ -1,3 +1,11 @@
+## 0.5.1
+
+### Fix: Postgres-Startfehler waren unsichtbar
+- `pg_ctl` schreibt Postgres' eigenes Log nach `/data/postgres.log` — das steht nicht im normalen Add-on-Protokoll, ein fehlgeschlagener Start sah dadurch nur wie "Connection refused" ohne jede Ursache aus
+- `run.sh` gibt jetzt bei jedem Fehlschlag den echten Grund direkt im Add-on-Log aus: `initdb`-Fehler, `pg_ctl`-Exitcode samt `/data/postgres.log`-Inhalt, sowie das Log erneut, falls Postgres nach 30s nicht bereit ist
+- Rollen-/Datenbank-Anlage und die Erfolgsmeldung "Postgres laeuft" laufen jetzt nur noch, wenn Postgres wirklich erreichbar ist, statt unbedingt zu versuchen weiterzumachen
+- Lokal verifiziert: sowohl der Erfolgsfall (sauberer Start) als auch ein erzwungener Fehlerfall (korruptes Datenverzeichnis) wurden getestet — im Fehlerfall erscheint jetzt z. B. `postgres: could not access the server configuration file "/data/postgres/postgresql.conf": No such file or directory` statt nur eines stillen Timeouts
+
 ## 0.5.0
 
 ### Postgres + Grafana jetzt im selben Add-on-Container statt separater Add-ons
