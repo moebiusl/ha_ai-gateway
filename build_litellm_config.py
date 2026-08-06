@@ -21,7 +21,7 @@ MODEL_SPEC = {
         {"api_key": clean(options.get("groq_api_key"))},
     ),
     "openrouter": lambda options: (
-        f"openrouter/{clean(options.get('model_openrouter')) or 'meta-llama/llama-3.3-70b-instruct:free'}",
+        f"openrouter/{clean(options.get('model_openrouter')) or 'openai/gpt-oss-20b:free'}",
         {"api_key": clean(options.get("openrouter_api_key"))},
     ),
     "ollama": lambda options: (

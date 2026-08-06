@@ -1,3 +1,10 @@
+## 0.5.4
+
+### Standard-OpenRouter-Modell erneut aktualisiert (wieder deprecated)
+- `meta-llama/llama-3.3-70b-instruct:free` ist mittlerweile komplett aus dem OpenRouter-Katalog entfernt worden (404 "unavailable for free")
+- Neuer Default: `openai/gpt-oss-20b:free` - gegen die aktuelle OpenRouter-Modelliste geprüft (`GET https://openrouter.ai/api/v1/models`, `:free`-Suffix + `supported_parameters` enthält `tools`), 131k Kontext
+- **Betrifft nur Neuinstallationen** - wer `model_openrouter` bereits in den Add-on-Optionen gesetzt hat, muss den Wert manuell aktualisieren
+
 ## 0.5.3
 
 ### Fix: 502 Bad Gateway bei komplexeren Assist-Anfragen (Tool-Calls)
