@@ -33,9 +33,9 @@ Läuft komplett als ein Home-Assistant-Add-on auf derselben Box — kein separat
 
 ## Installation
 
-1. Dieses Repository nach GitHub pushen (`github.com/moebiusl/ai-gateway`, siehe `repository.yaml`).
+1. Dieses Repository nach GitHub pushen (`github.com/moebiusl/ha_ai-gateway`, siehe `repository.yaml`).
 2. In Home Assistant zu **Einstellungen → Add-ons → Add-on Store** gehen.
-3. Oben rechts **Repositories** öffnen, `https://github.com/moebiusl/ai-gateway` hinzufügen.
+3. Oben rechts **Repositories** öffnen, `https://github.com/moebiusl/ha_ai-gateway` hinzufügen.
 4. Store neu laden, **AI Gateway** installieren und starten.
 5. Unter **Konfiguration** mindestens einen Provider eintragen (Cloud-API-Key oder eine erreichbare Ollama-Adresse).
 
