@@ -1,3 +1,9 @@
+## 0.5.5
+
+### Fix: Grafana-Dashboard zeigte "no default database" und danach "origin not allowed"
+- `grafana/provisioning/datasources/postgres.yml`: Grafana 13 liest das "Default Database"-Feld für Postgres-Datasources aus `jsonData.database`, nicht mehr nur aus dem Top-Level-Feld `database` — ohne das zeigte die UI "You do not currently have a default database configured", obwohl die eigentliche Verbindung über das Top-Level-Feld funktionierte
+- `run.sh`: `GF_SERVER_ROOT_URL` und `GF_SECURITY_CSRF_TRUSTED_ORIGINS` gesetzt — ohne das vergleicht Grafanas CSRF-Check den `Origin`-Header des Browsers (z. B. `http://100.97.34.101:3001`) gegen den Default `localhost:3000` und lehnt Anfragen mit "origin not allowed" ab, da der Zugriff tatsächlich über die Tailscale-Bridge auf Port 3001 läuft
+
 ## 0.5.4
 
 ### Standard-OpenRouter-Modell erneut aktualisiert (wieder deprecated)
