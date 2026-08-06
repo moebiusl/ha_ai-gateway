@@ -10,7 +10,7 @@ import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from providers import AUTO_LABEL, configured_providers, label_to_provider_key, model_name_for
+from providers import AUTO_LABEL, PROVIDER_TIMEOUTS, configured_providers, label_to_provider_key, model_name_for
 
 LITELLM_INTERNAL_PORT = os.environ.get("LITELLM_INTERNAL_PORT", "4001")
 LITELLM_BASE_URL = f"http://127.0.0.1:{LITELLM_INTERNAL_PORT}"
@@ -53,6 +53,13 @@ OPTIONS = read_options()
 AVAILABLE_PROVIDERS = configured_providers(OPTIONS)
 OVERRIDE_ENTITY_ID = str(OPTIONS.get("provider_override_entity_id") or "").strip() or "input_select.ai_gateway_provider_override"
 METRICS_DB_URL = INTERNAL_METRICS_DB_URL if OPTIONS.get("enable_metrics") else ""
+
+# Muss die gesamte moegliche Kaskaden-Laufzeit abdecken (Summe der
+# Provider-Timeouts aus providers.py, jeder Provider wird mit num_retries=0
+# hoechstens einmal versucht) - sonst kappt der Router die Anfrage, bevor
+# LiteLLM ueberhaupt beim letzten Fallback (typischerweise Ollama) angekommen
+# ist, obwohl der am Ende noch erfolgreich geantwortet haette.
+UPSTREAM_TIMEOUT = max(60, sum(PROVIDER_TIMEOUTS.get(p, 30) for p in AVAILABLE_PROVIDERS) + 20)
 
 app = FastAPI()
 
@@ -163,7 +170,7 @@ async def chat_completions(request: Request):
         )
 
     try:
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=UPSTREAM_TIMEOUT) as client:
             upstream = await client.post(
                 f"{LITELLM_BASE_URL}/v1/chat/completions",
                 content=json.dumps(body),
@@ -184,7 +191,7 @@ async def proxy_streaming_response(url, body, headers):
     Status-Code steht schon nach den Response-Headern fest, bevor der Body
     ausgelesen wird - deshalb der Umweg ueber manuelles __aenter__/__aexit__
     statt eines einfachen `async with`, das den ganzen Body puffern wuerde."""
-    client = httpx.AsyncClient(timeout=120)
+    client = httpx.AsyncClient(timeout=UPSTREAM_TIMEOUT)
     stream_cm = client.stream("POST", url, content=json.dumps(body), headers=headers)
     try:
         upstream = await stream_cm.__aenter__()

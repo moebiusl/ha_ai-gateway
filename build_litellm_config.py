@@ -4,7 +4,7 @@ import sys
 
 import yaml
 
-from providers import PROVIDER_ORDER, configured_providers, model_name_for
+from providers import PROVIDER_ORDER, PROVIDER_TIMEOUTS, configured_providers, model_name_for
 
 OPTIONS_PATH = "/data/options.json"
 # custom_callback.py muss laut LiteLLM-Doku im selben Verzeichnis wie die
@@ -61,6 +61,7 @@ def main():
     model_list = []
     for key in available:
         model_spec, extra_params = MODEL_SPEC[key](options)
+        extra_params.setdefault("timeout", PROVIDER_TIMEOUTS.get(key, 30))
         model_list.append({
             "model_name": model_name_for(key),
             "litellm_params": {"model": model_spec, **extra_params},
@@ -71,7 +72,10 @@ def main():
     fallback_chain = [model_name_for(key) for key in available[1:]]
 
     litellm_settings = {
-        "num_retries": 1,
+        # num_retries=0: bei Quota-/Modell-/Auth-Fehlern (429, 404, ...) hilft
+        # ein Retry auf demselben Provider ohnehin nicht - das kostet nur
+        # Zeit, die dem naechsten Fallback-Kandidaten (am Ende Ollama) fehlt.
+        "num_retries": 0,
         "cooldown_time": 60,
         "allowed_fails": 1,
     }

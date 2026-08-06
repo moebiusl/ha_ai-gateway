@@ -1,3 +1,12 @@
+## 0.5.3
+
+### Fix: 502 Bad Gateway bei komplexeren Assist-Anfragen (Tool-Calls)
+- Beobachtet auf dem echten Server: einfache Anfragen ("Hallo") liefen durch, Anfragen mit Tool-Calls ("Welche Lichter sind an") endeten oft in `502 Bad Gateway` und HA meldete "Timeout running pipeline"
+- Ursache: kein Provider hatte einen eigenen Timeout gesetzt, `num_retries: 1` hat bei endgültig fehlschlagenden Providern (abgelaufenes Kontingent, falsches/veraltetes Modell) unnötig Zeit verdoppelt, und `router.py` hat die ganze Kaskade pauschal nach 120s abgebrochen - bei vier Providern mit je bis zu zwei Versuchen konnte das die Kaskade locker überschreiten, bevor der eigentlich funktionierende letzte Fallback (Ollama, auf CPU spürbar langsamer bei Tool-Call-Kontext) überhaupt fertig war
+- `providers.py`: neue `PROVIDER_TIMEOUTS` (Gemini/Groq 15s, OpenRouter 20s, Ollama 90s) - jetzt in `build_litellm_config.py` pro Provider als `timeout` in die LiteLLM-Config geschrieben
+- `litellm_settings.num_retries` von 1 auf 0 - ein zweiter Versuch bei Quota-/Auth-/Modell-Fehlern bringt nichts und kostet nur Zeit, die Kaskaden-Redundanz kommt ohnehin über die verschiedenen Provider
+- `router.py`: fester 120s-Timeout ersetzt durch `UPSTREAM_TIMEOUT`, berechnet als Summe der Timeouts aller tatsächlich konfigurierten Provider (+20s Puffer) - deckt die maximal mögliche Kaskaden-Laufzeit ab, statt sie an einer beliebigen festen Zahl zu kappen
+
 ## 0.5.2
 
 ### Fix: Postgres startete auf dem echten HA-Server nie (Permission denied)

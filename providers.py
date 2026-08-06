@@ -15,6 +15,18 @@ PROVIDER_LABELS = {
 
 AUTO_LABEL = "Automatisch (Kaskade)"
 
+# Cloud-Provider sollen bei Problemen (Quota, falsches Modell, Netzwerk)
+# schnell auf den naechsten in der Kaskade weiterreichen statt lange zu haengen.
+# Ollama laeuft typischerweise lokal auf der CPU ohne GPU - eine Tool-Call-
+# Anfrage mit vollem HA-Entity-Kontext braucht dort spuerbar laenger, deshalb
+# bekommt es als letztes Glied der Kaskade deutlich mehr Zeit.
+PROVIDER_TIMEOUTS = {
+    "gemini": 15,
+    "groq": 15,
+    "openrouter": 20,
+    "ollama": 90,
+}
+
 
 def model_name_for(provider_key):
     return f"provider-{provider_key}"
