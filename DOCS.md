@@ -10,7 +10,7 @@ Das Add-on allein reicht nicht — es müssen noch drei Dinge dazukommen, die si
 
 ### 1. Kostenlose API-Keys besorgen (so viele wie du willst, auch nur einer reicht)
 
-- **Gemini**: Key über Google AI Studio erstellen (kostenloses Kontingent für `gemini-2.0-flash` o.ä.)
+- **Gemini**: Key über Google AI Studio erstellen (kostenloses Kontingent für `gemini-2.0-flash` o.ä.). **Wichtig:** Googles Gemini-API-Nutzungsbedingungen schließen das Gratis-Kontingent für Nutzer in der EU/EWR, UK und der Schweiz vertraglich aus — dort liefert jeder Key (unabhängig vom Google-Konto) dauerhaft `limit: 0` auf allen `free_tier`-Metriken, kein Bug, kein Workaround außer echtes Google-Cloud-Billing. Wer aus diesen Regionen zugreift, sollte `gemini_api_key` einfach leer lassen und sich auf Groq/OpenRouter/Ollama verlassen.
 - **Groq**: Key über die Groq Console erstellen (kostenloses Kontingent, sehr schnelle Antworten für offene Modelle wie Llama 3.3)
 - **OpenRouter**: Key über OpenRouter erstellen, dort gezielt ein Modell mit `:free`-Suffix wählen
 
