@@ -1,3 +1,10 @@
+## 0.5.2
+
+### Fix: Postgres startete auf dem echten HA-Server nie (Permission denied)
+- Dank der Diagnose aus 0.5.1 jetzt sichtbar geworden: `pg_ctl -l /data/postgres.log` schlug mit `cannot create /data/postgres.log: Permission denied` fehl — `/data` selbst gehört unter HA Supervisor `root` und ist für den `postgres`-Systemnutzer nicht beschreibbar, nur das eigens angelegte `/data/postgres` (per `chown -R`) ist es
+- Postgres-Log liegt jetzt unter `$PGDATA/postgres.log` (also `/data/postgres/postgres.log`) statt direkt unter `/data` — dieser Pfad ist bereits `postgres`-beschrieben
+- Lokal verifiziert mit denselben Berechtigungen wie unter HA Supervisor (`/data` `root:root 755`, `/data/postgres` `postgres:postgres 700`): Postgres startet jetzt sauber durch
+
 ## 0.5.1
 
 ### Fix: Postgres-Startfehler waren unsichtbar

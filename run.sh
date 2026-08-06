@@ -59,19 +59,20 @@ if [ "$ENABLE_METRICS" = "true" ]; then
     fi
   fi
 
-  su postgres -c "$PG_BIN/pg_ctl -D $PGDATA -l /data/postgres.log -o '-p 5432 -h 127.0.0.1' start"
+  PG_LOG="$PGDATA/postgres.log"
+  su postgres -c "$PG_BIN/pg_ctl -D $PGDATA -l $PG_LOG -o '-p 5432 -h 127.0.0.1' start"
   PG_START_STATUS=$?
   if [ "$PG_START_STATUS" -ne 0 ]; then
-    echo "pg_ctl start ist mit Code $PG_START_STATUS fehlgeschlagen, /data/postgres.log:" >&2
-    cat /data/postgres.log >&2 2>/dev/null
+    echo "pg_ctl start ist mit Code $PG_START_STATUS fehlgeschlagen, $PG_LOG:" >&2
+    cat "$PG_LOG" >&2 2>/dev/null
   fi
 
   i=0
   until su postgres -c "$PG_BIN/pg_isready -h 127.0.0.1 -p 5432" >/dev/null 2>&1; do
     i=$((i + 1))
     if [ "$i" -ge 30 ]; then
-      echo "Postgres nach 30s nicht bereit - Metrics evtl. nicht nutzbar. /data/postgres.log:" >&2
-      cat /data/postgres.log >&2 2>/dev/null
+      echo "Postgres nach 30s nicht bereit - Metrics evtl. nicht nutzbar. $PG_LOG:" >&2
+      cat "$PG_LOG" >&2 2>/dev/null
       break
     fi
     sleep 1
