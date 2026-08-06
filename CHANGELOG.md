@@ -1,3 +1,13 @@
+## 0.5.0
+
+### Postgres + Grafana jetzt im selben Add-on-Container statt separater Add-ons
+- Auf Wunsch: nur noch **ein** Add-on zu installieren statt drei (AI Gateway + Postgres-Add-on + Grafana-Add-on)
+- Postgres läuft intern (nur `127.0.0.1:5432`, kein Port nach außen), Datenverzeichnis unter `/data/postgres` (übersteht Add-on-Updates, da `/data` der persistente Add-on-Speicher ist)
+- Grafana läuft mit auf Port 3001 nach außen (bewusst **kein** HA-Ingress — bekannte Subpath-Probleme selbst beim dedizierten Community-Add-on, stattdessen direkter Port wie beim Wallpanel-Add-on, über VPN genauso erreichbar)
+- Datenquelle + Dashboard sind jetzt fest ins Image einprovisioniert (`grafana/provisioning/`) statt manuellem Import — kein Rätselraten mehr über Mount-Pfade eines fremden Add-ons
+- **Breaking**: Add-on-Option `metrics_db_url` entfällt, ersetzt durch `enable_metrics` (bool) + optional `grafana_admin_password`
+- Neue Add-on-Option `ports: 3000/tcp: 3001` für Grafana
+
 ## 0.4.0
 
 ### Grafana läuft jetzt als HA-Add-on statt separatem docker-compose-Stack

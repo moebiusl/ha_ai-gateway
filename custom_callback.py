@@ -32,7 +32,7 @@ def _metrics_enabled():
     try:
         with open(OPTIONS_PATH, "r", encoding="utf-8") as handle:
             options = json.load(handle)
-        return bool(str(options.get("metrics_db_url") or "").strip())
+        return bool(options.get("enable_metrics"))
     except Exception:  # noqa: BLE001
         return False
 

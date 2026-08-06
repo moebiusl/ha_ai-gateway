@@ -1,6 +1,6 @@
 name: "AI Gateway"
 description: "Kostenloser, kaskadierender Assist-Ersatz: Gemini/Groq/OpenRouter-Freikontingente mit automatischem Fallback auf lokales Ollama."
-version: "0.4.0"
+version: "0.5.0"
 slug: "ai_gateway"
 init: false
 
@@ -14,6 +14,12 @@ homeassistant_api: true
 hassio_api: true
 hassio_role: manager
 
+ports:
+  3000/tcp: 3001
+
+ports_description:
+  3000/tcp: "Grafana-Dashboard (nur falls enable_metrics aktiv ist)"
+
 options:
   gemini_api_key: ""
   groq_api_key: ""
@@ -26,7 +32,8 @@ options:
   model_ollama: "qwen2.5:7b"
   status_sensor_entity_id: "sensor.ai_gateway_active_provider"
   provider_override_entity_id: "input_select.ai_gateway_provider_override"
-  metrics_db_url: ""
+  enable_metrics: false
+  grafana_admin_password: ""
 
 schema:
   gemini_api_key: password?
@@ -40,4 +47,5 @@ schema:
   model_ollama: str?
   status_sensor_entity_id: str?
   provider_override_entity_id: str?
-  metrics_db_url: str?
+  enable_metrics: bool?
+  grafana_admin_password: password?

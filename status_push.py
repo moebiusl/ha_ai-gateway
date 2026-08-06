@@ -18,7 +18,8 @@ if os.path.exists("/data/options.json"):
 MASTER_KEY = str(OPTIONS.get("gateway_master_key") or "").strip()
 ENTITY_ID = str(OPTIONS.get("status_sensor_entity_id") or "sensor.ai_gateway_active_provider").strip()
 OVERRIDE_ENTITY_ID = str(OPTIONS.get("provider_override_entity_id") or "input_select.ai_gateway_provider_override").strip()
-METRICS_DB_URL = str(OPTIONS.get("metrics_db_url") or "").strip()
+INTERNAL_METRICS_DB_URL = "postgresql://ai_gateway:ai-gateway-internal@127.0.0.1:5432/ai_gateway"
+METRICS_DB_URL = INTERNAL_METRICS_DB_URL if OPTIONS.get("enable_metrics") else ""
 
 
 def check_health():
@@ -114,14 +115,14 @@ def push_metric(entity_id, state, unit, friendly_name, icon):
 def push_metrics_from_db():
     """Fragt die metrics-Postgres (separater docker-compose-Stack, siehe
     metrics/) nach Kennzahlen fuer heute und pusht sie als HA-Sensoren.
-    Ohne metrics_db_url wird dieser Schritt einfach uebersprungen."""
+    Ohne enable_metrics wird dieser Schritt einfach uebersprungen."""
     if not METRICS_DB_URL:
         return
 
     try:
         import psycopg2  # lokal importiert, da optional
     except ImportError:
-        print("psycopg2 nicht verfuegbar, kann metrics_db_url nicht abfragen.", flush=True)
+        print("psycopg2 nicht verfuegbar, kann Metrics-Datenbank nicht abfragen.", flush=True)
         return
 
     try:

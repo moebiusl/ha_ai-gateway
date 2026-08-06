@@ -47,7 +47,7 @@ def clean(value):
 def main():
     options = read_options()
     master_key = clean(options.get("gateway_master_key"))
-    metrics_db_url = clean(options.get("metrics_db_url"))
+    metrics_enabled = bool(options.get("enable_metrics"))
 
     available = configured_providers(options)
     if not available:
@@ -80,11 +80,11 @@ def main():
         litellm_settings["fallbacks"] = [{primary_name: fallback_chain}]
         litellm_settings["default_fallbacks"] = [fallback_chain[-1]]
 
-    if metrics_db_url:
+    if metrics_enabled:
         # Eigener CustomLogger statt des eingebauten "generic_api"-Callbacks -
         # letzterer ist eine LiteLLM-Enterprise-Funktion (Lizenzpflicht), das
         # ist beim Testen aufgefallen. custom_callback.py postet lokal an
-        # router.py, das dann in metrics_db_url schreibt.
+        # router.py, das dann in die mitgelieferte Postgres schreibt.
         litellm_settings["callbacks"] = "custom_callback.proxy_handler_instance"
 
     config = {
@@ -96,6 +96,12 @@ def main():
 
     with open(OUTPUT_PATH, "w", encoding="utf-8") as handle:
         yaml.safe_dump(config, handle, sort_keys=False)
+
+    # run.sh muss vor dem Start von Postgres/Grafana wissen, ob enable_metrics
+    # gesetzt ist - os.environ hier zu setzen bringt nichts, das gilt nur fuer
+    # diesen kurzlebigen Python-Kindprozess, deshalb der Umweg ueber eine Datei.
+    with open("/tmp/gateway-env.sh", "w", encoding="utf-8") as handle:
+        handle.write(f"export ENABLE_METRICS={'true' if metrics_enabled else 'false'}\n")
 
     print(f"LiteLLM-Konfiguration geschrieben nach {OUTPUT_PATH}. Provider: {', '.join(available)}")
 

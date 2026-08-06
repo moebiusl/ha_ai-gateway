@@ -37,6 +37,9 @@ CREATE INDEX IF NOT EXISTS requests_provider_idx ON requests (provider);
 """
 
 OPTIONS_PATH = "/data/options.json"
+# Postgres laeuft im selben Container, nur intern erreichbar (127.0.0.1,
+# kein Port nach aussen) - deshalb feste Zugangsdaten statt Nutzereingabe.
+INTERNAL_METRICS_DB_URL = "postgresql://ai_gateway:ai-gateway-internal@127.0.0.1:5432/ai_gateway"
 
 
 def read_options():
@@ -49,7 +52,7 @@ def read_options():
 OPTIONS = read_options()
 AVAILABLE_PROVIDERS = configured_providers(OPTIONS)
 OVERRIDE_ENTITY_ID = str(OPTIONS.get("provider_override_entity_id") or "").strip() or "input_select.ai_gateway_provider_override"
-METRICS_DB_URL = str(OPTIONS.get("metrics_db_url") or "").strip()
+METRICS_DB_URL = INTERNAL_METRICS_DB_URL if OPTIONS.get("enable_metrics") else ""
 
 app = FastAPI()
 

@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: AI Gateway Postgres
+    uid: ai-gateway-postgres
+    type: postgres
+    access: proxy
+    url: 127.0.0.1:5432
+    user: ai_gateway
+    database: ai_gateway
+    isDefault: true
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1500
+      timescaledb: false
+    secureJsonData:
+      password: ai-gateway-internal

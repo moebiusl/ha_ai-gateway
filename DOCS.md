@@ -51,16 +51,15 @@ Das Add-on fragt diesen Helfer alle paar Sekunden ab. Steht er auf einem bestimm
 
 ### 5. Optional: Grafana-Dashboard mit Anfragen, Tokens, Antwortzeit
 
-Läuft komplett als Home-Assistant-Add-ons mit — dadurch über denselben Weg erreichbar wie HA selbst (z. B. per VPN), kein separater Host/Port nötig.
+Postgres und Grafana laufen **im selben Add-on-Container mit** — nichts weiter zu installieren. Damit über denselben Weg erreichbar wie HA selbst (z. B. per VPN), ohne separaten Host.
 
-1. **Postgres-Add-on installieren**: Repository `https://github.com/expaso/hassos-addons` hinzufügen, das PostgreSQL-Add-on installieren, Admin-Zugangsdaten (Nutzer/Passwort/Datenbank) in dessen Konfiguration vergeben, starten.
-2. **Grafana-Add-on installieren**: Repository `https://github.com/hassio-addons/addon-grafana` hinzufügen, installieren, starten. Erscheint danach mit Ingress in der HA-Seitenleiste — Login läuft automatisch über HA (kein separates Passwort nötig).
-3. Im AI-Gateway-Add-on unten `metrics_db_url` eintragen, z. B. `postgresql://<user>:<passwort>@<postgres-addon-hostname>:5432/<db>` (Hostname steht wie bei Ollama auf der Info-Seite des Postgres-Add-ons). AI Gateway legt die benötigte Tabelle beim Start selbst an.
-4. In Grafana (über die Seitenleiste öffnen) einmalig:
-   - **Datenquelle hinzufügen** → PostgreSQL → dieselben Zugangsdaten wie in Schritt 3
-   - **Dashboard importieren** → die Datei [`grafana/ai-gateway-overview.json`](grafana/ai-gateway-overview.json) aus diesem Repo hochladen, die eben angelegte Datenquelle auswählen
+1. Im AI-Gateway-Add-on unter **Konfiguration** `enable_metrics: true` setzen, optional `grafana_admin_password` (sonst gilt Grafanas Standard `admin` / `admin`, Passwortänderung wird beim ersten Login verlangt)
+2. Add-on neu starten — beim ersten Start mit `enable_metrics: true` wird die Datenbank automatisch angelegt, Datenquelle und Dashboard sind bereits vorprovisioniert
+3. Grafana öffnen: `http://<ha-host>:3001` (derselbe Host, auf dem auch Home Assistant läuft — über euer VPN also genauso erreichbar)
 
-Das Dashboard zeigt danach Anfragen über Zeit, Tokens pro Modell, Ø-Antwortzeit, Fehlerquote und eine Tabelle mit jeder Anfrage inklusive auslösendem Prompt und voller Antwort.
+Das Dashboard "AI Gateway" ist sofort da und zeigt Anfragen über Zeit, Tokens pro Modell, Ø-Antwortzeit, Fehlerquote und eine Tabelle mit jeder Anfrage inklusive auslösendem Prompt und voller Antwort.
+
+Postgres selbst ist **nicht** von außen erreichbar (nur `127.0.0.1` im Container) — einzig Grafanas Port 3001 ist nach außen offen.
 
 ## Add-on-Konfiguration
 
@@ -74,7 +73,8 @@ Das Dashboard zeigt danach Anfragen über Zeit, Tokens pro Modell, Ø-Antwortzei
 | `model_gemini` / `model_groq` / `model_openrouter` / `model_ollama` | Welches Modell je Anbieter genutzt wird (Defaults sind ein sinnvoller Startpunkt, Verfügbarkeit ändert sich gelegentlich — bei Bedarf anpassen) |
 | `status_sensor_entity_id` | Entity-ID des Status-Sensors in HA (Standard: `sensor.ai_gateway_active_provider`) |
 | `provider_override_entity_id` | Entity-ID des Dropdown-Helfers für den Hart-Wechsel (Standard: `input_select.ai_gateway_provider_override`) |
-| `metrics_db_url` | Vollständige Postgres-URL des Postgres-Add-ons (siehe Schritt 5), optional — leer heißt kein Logging, keine Kennzahlen-Sensoren |
+| `enable_metrics` | Startet die mitgelieferte Postgres + Grafana (siehe Schritt 5), Standard `false` |
+| `grafana_admin_password` | Optionales Admin-Passwort für Grafana, nur relevant wenn `enable_metrics` aktiv ist |
 
 Mindestens **ein** Provider (Cloud-Key oder `ollama_url`) muss gesetzt sein, sonst startet der Proxy nicht.
 
@@ -87,7 +87,7 @@ Das Add-on legt automatisch die Entity `sensor.ai_gateway_active_provider` in Ho
 - **Attribut `override`**: aktueller Stand des Hart-Wechsel-Helfers (`Automatisch (Kaskade)` oder ein konkreter Provider)
 - **Attribut `last_error`**: letzte Fehlermeldung, falls der Gateway selbst nicht erreichbar war
 
-Ist `metrics_db_url` gesetzt, kommen zusätzlich diese Sensoren dazu (Kennzahlen für den laufenden Tag):
+Ist `enable_metrics` aktiv, kommen zusätzlich diese Sensoren dazu (Kennzahlen für den laufenden Tag):
 
 - `sensor.ai_gateway_requests_today`
 - `sensor.ai_gateway_tokens_today`
@@ -97,4 +97,4 @@ Alle diese Entities lassen sich wie jeder andere Sensor auf einem Dashboard anze
 
 ## Sicherheit
 
-Das Add-on gibt **keinen** externen Port frei — es ist absichtlich nur aus dem internen Home-Assistant-Netz erreichbar, nicht vom LAN. Der `gateway_master_key` ist eine zusätzliche Zugriffsschranke innerhalb dieses internen Netzes. Die vollen Gesprächsinhalte landen (sofern `metrics_db_url` gesetzt ist) im Klartext in der Postgres-Datenbank — das ist bewusst so gewünscht, aber auch das Postgres-Add-on entsprechend absichern (Zugangsdaten nicht mit anderen Diensten teilen).
+Der Gateway-Port selbst (4000) wird **nicht** nach außen freigegeben — nur aus dem internen Home-Assistant-Netz erreichbar. Der `gateway_master_key` ist eine zusätzliche Zugriffsschranke innerhalb dieses internen Netzes. Ist `enable_metrics` aktiv, ist einzig Grafana (Port 3001) von außen erreichbar — mit Admin-Login (`grafana_admin_password` setzen, sonst Grafanas Standard-Login mit Passwortänderung beim ersten Zugriff). Die vollen Gesprächsinhalte landen dann im Klartext in der internen Postgres — das ist bewusst so gewünscht, aber die Datenbank selbst ist nach außen nicht erreichbar (nur Grafana als Zugriffsweg darauf).
