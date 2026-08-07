@@ -1,3 +1,10 @@
+## 0.5.11
+
+### Fix: Kaskade brach ab, sobald ein Zwischenglied (nicht der Primaerprovider) fehlschlug
+- Regression aus 0.5.8: nach dem Entfernen von `default_fallbacks` bestand `fallbacks` nur noch aus einem einzigen Eintrag `{'provider-groq': ['provider-openrouter', 'provider-ollama']}` - auf dem echten Server beobachtet: schlug Groq fehl UND danach auch OpenRouter, brach die Anfrage komplett ab statt bei Ollama weiterzumachen (Log: `No fallback model group found for original model_group=provider-openrouter`)
+- Ursache im litellm-Quellcode geprueft (`get_fallback_model_group()` in `router_utils/fallback_event_handlers.py`): bei jedem Fehlschlag wird ein Eintrag fuer GENAU DAS gerade fehlgeschlagene Modell gesucht, nicht fuer den urspruenglichen Primaerprovider - ein Eintrag nur fuer `provider-groq` deckt daher nicht ab, wenn `provider-openrouter` als Zwischenglied selbst fehlschlaegt
+- `build_litellm_config.py`: `fallbacks` ist jetzt eine Kette mit je einem expliziten Eintrag pro Provider zum naechsten (`provider-groq`->`provider-openrouter`, `provider-openrouter`->`provider-ollama`, ...) - gegen die echte `get_fallback_model_group()`-Funktion verifiziert, jeder Hop loest jetzt korrekt auf, das letzte Glied bleibt bewusst ohne eigenen Eintrag (sauberer Abbruch statt Selbst-Fallback wie vor 0.5.8)
+
 ## 0.5.10
 
 ### Fix: Grafana-Zugriffs-URL/CSRF-Origins waren fest auf einen einzelnen Nutzer hartkodiert

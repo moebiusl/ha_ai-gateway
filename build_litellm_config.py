@@ -67,10 +67,6 @@ def main():
             "litellm_params": {"model": model_spec, **extra_params},
         })
 
-    # Automatik-Kaskade: der erste konfigurierte Provider faellt bei Fehler auf
-    # die naechsten (in PROVIDER_ORDER) konfigurierten zurueck.
-    fallback_chain = [model_name_for(key) for key in available[1:]]
-
     litellm_settings = {
         # num_retries=0: bei Quota-/Modell-/Auth-Fehlern (429, 404, ...) hilft
         # ein Retry auf demselben Provider ohnehin nicht - das kostet nur
@@ -79,18 +75,27 @@ def main():
         "cooldown_time": 60,
         "allowed_fails": 1,
     }
-    if fallback_chain:
-        # Kein default_fallbacks: router.py ruft ausserhalb eines harten
-        # Overrides (disable_fallbacks=True) immer nur primary_name auf, nie
-        # ein Zwischenglied direkt - default_fallbacks wuerde daher nur
-        # greifen, wenn das letzte Kaskadenglied (typischerweise Ollama)
-        # selbst fehlschlaegt, und litellm faellt dann mangels eigenem
-        # fallbacks-Eintrag fuer dieses Modell auf default_fallbacks zurueck.
-        # Da fallback_chain[-1] genau dieses letzte Glied ist, fuehrte das zu
-        # einem Fallback auf sich selbst - Ollama wurde nach einem 90s-Timeout
-        # ein zweites Mal 90s lang versucht, statt sauber fehlzuschlagen.
-        primary_name = model_name_for(available[0])
-        litellm_settings["fallbacks"] = [{primary_name: fallback_chain}]
+    if len(available) > 1:
+        # Jeder Provider bekommt einen EIGENEN Fallback-Eintrag zum jeweils
+        # naechsten (Kette statt einer einzigen Liste beim Primaerprovider).
+        # Grund: litellm.router_utils.fallback_event_handlers.get_fallback_model_group()
+        # sucht bei JEDEM Fehlschlag - auch bei einem Zwischenglied wie
+        # OpenRouter - einen Eintrag fuer GENAU DAS gerade fehlgeschlagene
+        # Modell, nicht fuer den urspruenglichen Primaerprovider. Mit nur
+        # einem Eintrag {'provider-groq': ['provider-openrouter',
+        # 'provider-ollama']} hat das auf dem echten Server dazu gefuehrt,
+        # dass die Kaskade abbrach, sobald OpenRouter (2. Glied) ebenfalls
+        # fehlschlug ("No fallback model group found for original
+        # model_group=provider-openrouter") - Ollama wurde nie versucht.
+        # Eine Kette mit je einem Eintrag pro Glied macht jeden Hop einzeln
+        # explizit und ist damit unabhaengig von dieser Fallback-Aufloesung
+        # korrekt. Das letzte Glied (Ollama) braucht bewusst KEINEN eigenen
+        # Eintrag - faellt es aus, soll die Anfrage sauber fehlschlagen statt
+        # (wie frueher per default_fallbacks) sich selbst nochmal zu versuchen.
+        litellm_settings["fallbacks"] = [
+            {model_name_for(available[i]): [model_name_for(available[i + 1])]}
+            for i in range(len(available) - 1)
+        ]
 
     if metrics_enabled:
         # Eigener CustomLogger statt des eingebauten "generic_api"-Callbacks -
