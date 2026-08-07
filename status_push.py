@@ -5,7 +5,7 @@ import time
 import requests
 
 from build_litellm_config import MODEL_SPEC
-from providers import configured_providers
+from providers import configured_providers, raw_model_to_provider_map
 
 PORT = os.environ.get("PORT", "4000")
 GATEWAY_HEALTH_URL = f"http://127.0.0.1:{PORT}/health"
@@ -25,10 +25,9 @@ INTERNAL_METRICS_DB_URL = "postgresql://ai_gateway:ai-gateway-internal@127.0.0.1
 METRICS_DB_URL = INTERNAL_METRICS_DB_URL if OPTIONS.get("enable_metrics") else ""
 AVAILABLE_PROVIDERS = configured_providers(OPTIONS)
 # provider-Key -> volles litellm-Modell-Kuerzel (z.B. "groq/llama-3.3-70b-versatile"),
-# wie es auch custom_callback.py als "model" ins requests-Log schreibt, abzueglich
-# des "<provider>/"-Praefixes fuer den Rueck-Lookup.
+# wie es auch custom_callback.py als "model" ins requests-Log schreibt.
 MODEL_SPEC_BY_PROVIDER = {key: MODEL_SPEC[key](OPTIONS)[0] for key in AVAILABLE_PROVIDERS}
-RAW_MODEL_TO_PROVIDER = {spec[len(key) + 1:]: key for key, spec in MODEL_SPEC_BY_PROVIDER.items()}
+RAW_MODEL_TO_PROVIDER = raw_model_to_provider_map(OPTIONS)
 
 
 def check_health():

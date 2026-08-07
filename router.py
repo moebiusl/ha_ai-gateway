@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import re
 import time
 from datetime import datetime
 
@@ -11,7 +12,14 @@ import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from providers import AUTO_LABEL, PROVIDER_TIMEOUTS, configured_providers, label_to_provider_key, model_name_for
+from providers import (
+    AUTO_LABEL,
+    PROVIDER_TIMEOUTS,
+    configured_providers,
+    label_to_provider_key,
+    model_name_for,
+    raw_model_to_provider_map,
+)
 
 LITELLM_INTERNAL_PORT = os.environ.get("LITELLM_INTERNAL_PORT", "4001")
 LITELLM_BASE_URL = f"http://127.0.0.1:{LITELLM_INTERNAL_PORT}"
@@ -52,6 +60,7 @@ def read_options():
 
 OPTIONS = read_options()
 AVAILABLE_PROVIDERS = configured_providers(OPTIONS)
+RAW_MODEL_TO_PROVIDER = raw_model_to_provider_map(OPTIONS)
 OVERRIDE_ENTITY_ID = str(OPTIONS.get("provider_override_entity_id") or "").strip() or "input_select.ai_gateway_provider_override"
 METRICS_DB_URL = INTERNAL_METRICS_DB_URL if OPTIONS.get("enable_metrics") else ""
 
@@ -117,6 +126,72 @@ def current_override_label():
     return _override_cache["label"]
 
 
+_provider_cooldown_until = {}
+
+# Reihenfolge wichtig: zuerst der eindeutigste/spezifischste Fall.
+# OpenRouter liefert den Tages-Reset als Unix-Millisekunden im
+# "X-RateLimit-Reset"-Header (im Fehlertext eingebettetes JSON), Groq nur
+# eine relative "try again in ...s"-Angabe.
+RATE_LIMIT_RESET_MS_RE = re.compile(r'"X-RateLimit-Reset"\s*:\s*"?(\d{10,})"?')
+RETRY_AFTER_SECONDS_RE = re.compile(r'"retry_after_seconds"\s*:\s*(\d+)')
+TRY_AGAIN_RE = re.compile(r"try again in (?:(\d+)m)?(\d+(?:\.\d+)?)s", re.IGNORECASE)
+
+
+def parse_retry_after_seconds(error_text):
+    """Extrahiert aus den Fehlermeldungen von Groq/OpenRouter eine
+    Wartezeit, um deren Kontingent proaktiv als 'gerade erschoepft' zu
+    markieren - auf dem echten Server hat das Gateway sonst bei jeder
+    einzelnen Folgeanfrage erneut die vollen ~35s auf zwei bereits bekannt
+    tote Provider gewartet, bevor es bei Ollama ankam. Liefert None, wenn
+    keines der bekannten Muster passt - dann bleibt der Provider einfach
+    unveraendert im normalen Kaskaden-Ablauf, es wird nichts geraten."""
+    if not error_text:
+        return None
+
+    match = RATE_LIMIT_RESET_MS_RE.search(error_text)
+    if match:
+        return max(0.0, int(match.group(1)) / 1000 - time.time())
+
+    match = RETRY_AFTER_SECONDS_RE.search(error_text)
+    if match:
+        return float(match.group(1))
+
+    match = TRY_AGAIN_RE.search(error_text)
+    if match:
+        minutes = int(match.group(1) or 0)
+        seconds = float(match.group(2))
+        return minutes * 60 + seconds
+
+    return None
+
+
+def mark_provider_cooldown(raw_model, error_text):
+    provider_key = RAW_MODEL_TO_PROVIDER.get(raw_model)
+    if not provider_key:
+        return
+    delay = parse_retry_after_seconds(error_text)
+    if delay is None:
+        return
+    until = time.time() + delay
+    _provider_cooldown_until[provider_key] = until
+    print(
+        f"Provider '{provider_key}' als erschoepft markiert bis "
+        f"{time.strftime('%H:%M:%S', time.localtime(until))} (Grund: {str(error_text)[:150]})",
+        flush=True,
+    )
+
+
+def clear_provider_cooldown(raw_model):
+    provider_key = RAW_MODEL_TO_PROVIDER.get(raw_model)
+    if provider_key:
+        _provider_cooldown_until.pop(provider_key, None)
+
+
+def provider_in_cooldown(provider_key):
+    until = _provider_cooldown_until.get(provider_key)
+    return until is not None and time.time() < until
+
+
 def resolve_target():
     """Liefert (model_name, hard_override) fuer die aktuelle Anfrage."""
     if not AVAILABLE_PROVIDERS:
@@ -127,6 +202,15 @@ def resolve_target():
     if provider_key and provider_key in AVAILABLE_PROVIDERS:
         return model_name_for(provider_key), True
 
+    for candidate in AVAILABLE_PROVIDERS:
+        if not provider_in_cooldown(candidate):
+            if candidate != AVAILABLE_PROVIDERS[0]:
+                print(f"Ueberspringe bekannt erschoepfte Provider, starte Kaskade bei '{candidate}'.", flush=True)
+            return model_name_for(candidate), False
+
+    # Alle bekannten Provider gelten als erschoepft (z.B. Reset-Zeit falsch
+    # geschaetzt) - trotzdem mit dem ersten starten, damit die normale
+    # Fehlerbehandlung/Kaskade greift, statt komplett zu blockieren.
     return model_name_for(AVAILABLE_PROVIDERS[0]), False
 
 
@@ -148,6 +232,18 @@ def normalize_tools(body):
 ENTITY_TABLE_HEADER = "entity_id,name,state,aliases"
 UNAVAILABLE_STATES = {"unavailable", "unknown"}
 TRIM_UNAVAILABLE_ENTITIES = bool(OPTIONS.get("trim_unavailable_entities", True))
+
+# Kamera-/Bewegungserkennungs-Helfer (z.B. aus Frigate-Blueprints) sind nie
+# per Sprachbefehl relevant und stehen praktisch immer auf 'unavailable' -
+# werden unabhaengig vom erkannten Thema immer ausgeschlossen, statt auf die
+# Stichwort-Heuristik von filter_entities_by_topic angewiesen zu sein.
+CAMERA_MOTION_MARKERS = ("motion_detected", "person_detected", "pet_detected", "camera_enabled")
+EXCLUDE_CAMERA_MOTION_ENTITIES = bool(OPTIONS.get("exclude_camera_motion_entities", True))
+
+# Extended OpenAI Conversation traegt hier manchmal ein Python-Objekt-Repr
+# ein statt eines echten Alias-Namens oder eines leeren Felds - reines
+# Rauschen, kostet aber Tokens in jeder betroffenen Zeile.
+GARBAGE_ALIAS_VALUES = {"computednametype._singleton"}
 
 # Grobe Stichwort-Heuristik: Anfrage-Text (lowercase) enthaelt eines der
 # Woerter -> die zugeordneten Domains gelten als relevant. Mehrdeutige
@@ -268,8 +364,61 @@ def filter_entities_by_topic(content, trigger_text):
     return "\n".join(new_lines), removed
 
 
+def exclude_camera_motion_entities(content):
+    """Entfernt Kamera-/Bewegungserkennungs-Helfer (siehe
+    CAMERA_MOTION_MARKERS) unabhaengig vom erkannten Thema - anders als
+    filter_entities_by_topic ist das kein Rateergebnis, sondern eine feste
+    Ausschlussliste fuer Entities, die nie per Sprachbefehl relevant sind."""
+    split = _split_entity_table(content)
+    if split is None:
+        return content, 0
+    lines, header_idx, end_idx, body_lines, rows = split
+
+    kept_lines = []
+    removed = 0
+    for line, row in zip(body_lines, rows):
+        entity_id = row[0].strip() if row else ""
+        if any(marker in entity_id for marker in CAMERA_MOTION_MARKERS):
+            removed += 1
+            continue
+        kept_lines.append(line)
+
+    if removed == 0:
+        return content, 0
+
+    new_lines = lines[: header_idx + 1] + kept_lines + lines[end_idx:]
+    return "\n".join(new_lines), removed
+
+
+def clean_garbage_aliases(content):
+    """Leert nur das bekannte Python-Objekt-Repr-Muster (siehe
+    GARBAGE_ALIAS_VALUES) im aliases-Feld, ruehrt echte Alias-Werte nicht
+    an."""
+    split = _split_entity_table(content)
+    if split is None:
+        return content, 0
+    lines, header_idx, end_idx, body_lines, rows = split
+
+    new_body_lines = []
+    changed = 0
+    for line, row in zip(body_lines, rows):
+        if len(row) >= 4 and row[3].strip().lower() in GARBAGE_ALIAS_VALUES:
+            row = list(row)
+            row[3] = ""
+            new_body_lines.append(",".join(row))
+            changed += 1
+        else:
+            new_body_lines.append(line)
+
+    if changed == 0:
+        return content, 0
+
+    new_lines = lines[: header_idx + 1] + new_body_lines + lines[end_idx:]
+    return "\n".join(new_lines), changed
+
+
 def apply_entity_trimming(body):
-    if not (TRIM_UNAVAILABLE_ENTITIES or FILTER_ENTITIES_BY_TOPIC):
+    if not (TRIM_UNAVAILABLE_ENTITIES or FILTER_ENTITIES_BY_TOPIC or EXCLUDE_CAMERA_MOTION_ENTITIES):
         return
     messages = body.get("messages")
     if not isinstance(messages, list):
@@ -282,15 +431,24 @@ def apply_entity_trimming(body):
         if not isinstance(content, str):
             continue
         total_removed = 0
+        aliases_cleaned = 0
         if TRIM_UNAVAILABLE_ENTITIES:
             content, removed = trim_unavailable_entities(content)
+            total_removed += removed
+        if EXCLUDE_CAMERA_MOTION_ENTITIES:
+            content, removed = exclude_camera_motion_entities(content)
             total_removed += removed
         if FILTER_ENTITIES_BY_TOPIC:
             content, removed = filter_entities_by_topic(content, trigger_text)
             total_removed += removed
-        if total_removed:
+        content, aliases_cleaned = clean_garbage_aliases(content)
+        if total_removed or aliases_cleaned:
             message["content"] = content
-            print(f"{total_removed} Entities aus System-Prompt entfernt (unavailable-Filter/Themen-Filter).", flush=True)
+            print(
+                f"{total_removed} Entities aus System-Prompt entfernt, "
+                f"{aliases_cleaned} Alias-Muell-Werte bereinigt.",
+                flush=True,
+            )
 
 
 @app.post("/v1/chat/completions")
@@ -461,6 +619,9 @@ async def metrics_log(request: Request):
     error_message = None
     if failure:
         error_message = str(payload.get("exception") or payload.get("error") or "unbekannter Fehler")
+        mark_provider_cooldown(payload.get("model"), error_message)
+    else:
+        clear_provider_cooldown(payload.get("model"))
 
     row = (
         payload.get("model") or "unbekannt",

@@ -54,3 +54,22 @@ def is_provider_configured(provider_key, options):
 def configured_providers(options):
     """Liste der konfigurierten Provider-Keys, in Prioritaetsreihenfolge."""
     return [key for key in PROVIDER_ORDER if is_provider_configured(key, options)]
+
+
+def raw_model_to_provider_map(options):
+    """Rueck-Lookup vom rohen litellm-Modell-Kuerzel (ohne '<provider>/'-
+    Praefix, z.B. 'llama-3.3-70b-versatile') auf den Provider-Key. Genau
+    dieser rohe Wert kommt sowohl in custom_callback.py's 'model'-Feld als
+    auch in litellms /health-Antworten zurueck - von router.py und
+    status_push.py gemeinsam genutzt, um eine Anfrage/einen Health-Check
+    wieder ihrem Provider zuzuordnen. Lazy-Import, um den Zirkularimport
+    mit build_litellm_config.py (das seinerseits providers.py importiert)
+    zu vermeiden."""
+    from build_litellm_config import MODEL_SPEC
+
+    mapping = {}
+    for key in configured_providers(options):
+        model_spec, _ = MODEL_SPEC[key](options)
+        raw_model = model_spec[len(key) + 1 :]
+        mapping[raw_model] = key
+    return mapping

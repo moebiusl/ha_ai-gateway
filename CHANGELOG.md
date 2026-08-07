@@ -1,3 +1,10 @@
+## 0.7.0
+
+### Neu: erschoepfte Provider proaktiv ueberspringen + weitere Prompt-Bereinigung
+- `router.py`: neues Cooldown-Tracking (`_provider_cooldown_until`) - schlaegt eine Anfrage wegen eines Kontingent-Limits fehl, wird die Wartezeit direkt aus der Fehlermeldung geparst (Groqs "try again in Xs/Xm", OpenRouters `X-RateLimit-Reset`-Zeitstempel, `retry_after_seconds`) und der Provider fuer diese Zeit als erschoepft markiert. `resolve_target()` startet die Kaskade fuer Folgeanfragen dann direkt beim naechsten nicht bekannt erschoepften Provider, statt jedes Mal erneut auf zwei bereits tote Provider zu warten (bis zu ~35s zusaetzliche Latenz vor der Ollama-Antwort gespart). Kein bekanntes Muster in der Fehlermeldung -> es wird nichts geraten, Provider bleibt normal Teil der Kaskade. Braucht die geloggten Fehler aus der Metrics-Postgres, also an `enable_metrics: true` gekoppelt (wie der traffic-basierte Status-Sensor aus 0.5.9)
+- `router.py`: zwei weitere Entity-Filterstufen (siehe 0.6.0) - `exclude_camera_motion_entities` (Standard an) entfernt Kamera-/Bewegungserkennungs-Helfer (z. B. Frigate-Blueprints) fest, unabhaengig vom erkannten Thema; ausserdem wird ein bekannter Prompt-Bug von Extended OpenAI Conversation bereinigt, der teils ein Python-Objekt-Repr (`ComputedNameType._singleton`) statt eines echten Alias-Namens einsetzt
+- `providers.py`: neue `raw_model_to_provider_map()` - die Zuordnung vom rohen litellm-Modell-Kuerzel auf den Provider-Key war in `status_push.py` dupliziert, jetzt an einer Stelle geteilt (auch von `router.py`s Cooldown-Tracking genutzt)
+
 ## 0.6.0
 
 ### Neu: Weniger Tokens pro Anfrage - nur relevante Geraete an das Modell schicken

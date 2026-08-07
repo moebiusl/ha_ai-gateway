@@ -83,18 +83,28 @@ Ohne diese beiden Optionen laufen Grafanas Standardwerte (passt für den normale
 | `grafana_admin_password` | Optionales Admin-Passwort für Grafana, nur relevant wenn `enable_metrics` aktiv ist |
 | `grafana_root_url` / `grafana_trusted_hostnames` | Nur bei "origin not allowed" nötig, siehe Schritt 5 |
 | `trim_unavailable_entities` | Entfernt Geräte im Zustand `unavailable`/`unknown` automatisch aus dem an das Modell geschickten Prompt (siehe unten), Standard `true` |
+| `exclude_camera_motion_entities` | Entfernt Kamera-/Bewegungserkennungs-Helfer (z. B. aus Frigate-Blueprints) fest aus dem Prompt, unabhängig vom Thema (siehe unten), Standard `true` |
 | `filter_entities_by_topic` | Behält nur Geräte-Domains, die per Stichwort-Heuristik zur Anfrage passen (siehe unten), Standard `false` |
 
 Mindestens **ein** Provider (Cloud-Key oder `ollama_url`) muss gesetzt sein, sonst startet der Proxy nicht.
 
 ## Token-Sparen: nur relevante Geräte an das Modell schicken
 
-Extended OpenAI Conversation schickt bei jeder Anfrage eine CSV-Tabelle **aller** für Assist freigegebenen Geräte mit ins Prompt. Der Router filtert das in zwei unabhängig zuschaltbaren Stufen, bevor die Anfrage an den gewählten Provider geht — unabhängig vom Kaskaden-Provider, bei jeder Anfrage neu:
+Extended OpenAI Conversation schickt bei jeder Anfrage eine CSV-Tabelle **aller** für Assist freigegebenen Geräte mit ins Prompt. Der Router filtert das in mehreren unabhängig zuschaltbaren Stufen, bevor die Anfrage an den gewählten Provider geht — unabhängig vom Kaskaden-Provider, bei jeder Anfrage neu:
 
 1. **`trim_unavailable_entities`** (Standard an): entfernt Geräte im Zustand `unavailable`/`unknown` — dauerhaft offline/kaputte Geräte liefern nie eine brauchbare Antwort, kosten aber trotzdem volle Tokens. Auf einem realen Setup mit vielen Integrationen waren über 50 % der Tabelle genau solche Zeilen. Kein manuelles Pflegen einer Ausschlussliste nötig: geht ein Gerät offline, verschwindet es automatisch; kommt es zurück, taucht es genauso automatisch wieder auf.
-2. **`filter_entities_by_topic`** (Standard aus, da experimentell): erkennt anhand fester deutscher Stichwörter im Anfrage-Text ein grobes Thema (z. B. "Lampe"/"Licht" → `light`, "Tür"/"Tor"/"Fenster" → `binary_sensor`/`cover`/`switch`, "Wetter"/"Temperatur" → `sensor`/`climate`) und behält nur Geräte aus den passenden Domains. Erkennt die Heuristik nichts Eindeutiges, wird **nicht** gefiltert — lieber zu viel Kontext schicken als eine Entity zu verlieren, die für die Antwort gebraucht wird. Die Stichwortliste steht als `DOMAIN_KEYWORDS` in `router.py` und lässt sich dort bei Bedarf erweitern.
+2. **`exclude_camera_motion_entities`** (Standard an): entfernt Entities, deren ID `motion_detected`, `person_detected`, `pet_detected` oder `camera_enabled` enthält (typische Frigate-/Kamera-Integrations-Helfer) — anders als die Themen-Heuristik unten eine feste, keine geratene Ausschlussliste, da diese Geräte nie per Sprachbefehl relevant sind.
+3. **`filter_entities_by_topic`** (Standard aus, da experimentell): erkennt anhand fester deutscher Stichwörter im Anfrage-Text ein grobes Thema (z. B. "Lampe"/"Licht" → `light`, "Tür"/"Tor"/"Fenster" → `binary_sensor`/`cover`/`switch`, "Wetter"/"Temperatur" → `sensor`/`climate`) und behält nur Geräte aus den passenden Domains. Erkennt die Heuristik nichts Eindeutiges, wird **nicht** gefiltert — lieber zu viel Kontext schicken als eine Entity zu verlieren, die für die Antwort gebraucht wird. Die Stichwortliste steht als `DOMAIN_KEYWORDS` in `router.py` und lässt sich dort bei Bedarf erweitern.
 
-Beide Filter sind defensiv an das genaue CSV-Format von Extended OpenAI Conversation gekoppelt (Kopfzeile `entity_id,name,state,aliases` in einem ```csv```-Block) — passt das Format nicht (z. B. nach einem Update der Komponente), bleibt der Prompt unverändert, statt etwas falsch zu zerschneiden.
+Zusätzlich wird ein bekannter Prompt-Bug von Extended OpenAI Conversation bereinigt: manchmal landet ein Python-Objekt-Repr (`ComputedNameType._singleton`) statt eines echten Alias-Namens im `aliases`-Feld — reines Rauschen, wird automatisch geleert.
+
+Alle Filter sind defensiv an das genaue CSV-Format von Extended OpenAI Conversation gekoppelt (Kopfzeile `entity_id,name,state,aliases` in einem ```csv```-Block) — passt das Format nicht (z. B. nach einem Update der Komponente), bleibt der Prompt unverändert, statt etwas falsch zu zerschneiden.
+
+## Kaskade: bekannt erschöpfte Provider automatisch überspringen
+
+Schlägt eine Anfrage wegen eines Kontingent-Limits fehl (Groq/OpenRouter-429-Antworten), liest der Router die Wartezeit direkt aus der Fehlermeldung des Providers (z. B. Groqs `"Please try again in 54m58s"` oder OpenRouters `X-RateLimit-Reset`-Zeitstempel) und merkt sich intern "dieser Provider ist bis dahin erschöpft". Folgeanfragen starten die Kaskade dann direkt beim nächsten noch nicht bekannt erschöpften Provider, statt jedes Mal erneut auf zwei bereits tote Provider zu warten (auf dem echten Server bis zu ~35 Sekunden zusätzliche Wartezeit vor jeder Ollama-Antwort). Läuft die geschätzte Wartezeit ab oder kommt kein bekanntes Muster in der Fehlermeldung vor, wird nichts geraten — der betroffene Provider bleibt normal Teil der Kaskade.
+
+Dieser Mechanismus braucht die geloggten Fehler aus der Metrics-Postgres und ist daher an `enable_metrics: true` gekoppelt (wie auch der traffic-basierte Status-Sensor).
 
 ## Live-Status: welcher Anbieter gerade aktiv ist
 
