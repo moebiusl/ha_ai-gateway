@@ -1,3 +1,10 @@
+## 0.8.0
+
+### Neu: Antwort-Cache gegen doppelte Retries, Grafana-Alert, Ollama-Tuning
+- `router.py`: kurzes Antwort-Caching (`response_cache_seconds`, Standard 30s) - Cache-Key aus Modell + Anfrage-Text + der (bereits getrimmten) Geraete-Tabelle, ohne die sich staendig aendernde "Current Time"-Zeile. Verhindert, dass ein HA-Retry derselben Frage (auf dem echten Server beobachtet: "Wie ist der Status vom Hoftor" kurz hintereinander zweimal) ein zweites Mal Kontingent/Zeit verbraucht. Nur fuer nicht-streamende Erfolgsantworten, mit 0 deaktivierbar
+- `build_litellm_config.py`: Ollamas Modell-Konfiguration bekommt `max_tokens: 512` - deckelt litellm-seitig num_predict als Sicherheitsnetz gegen ausufernde Generierungen, ohne normale Ein-Satz-Antworten zu kappen
+- `grafana/provisioning/alerting/high-error-rate.yaml`: neue Alert-Regel "AI Gateway: hohe Fehlerquote" (>5 fehlgeschlagene Anfragen in 15 Minuten, 10 Minuten anhaltend) - gegen die echte Grafana-Instanz erstellt und verifiziert (`health: ok`), dann wieder entfernt und als Provisioning-Datei ins Repo uebernommen, damit sie bei jedem Rebuild automatisch mitkommt. Zeigt als Alarm in Grafanas Alerting-UI; fuer externe Benachrichtigungen (E-Mail/Webhook) muss noch ein Contact Point in Grafana selbst eingerichtet werden (nutzerspezifisch, nicht vorbelegbar)
+
 ## 0.7.0
 
 ### Neu: erschoepfte Provider proaktiv ueberspringen + weitere Prompt-Bereinigung

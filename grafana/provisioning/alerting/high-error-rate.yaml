@@ -1,0 +1,43 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: AI Gateway Alerts
+    folder: AI Gateway
+    interval: 5m
+    rules:
+      - uid: ai-gateway-high-error-rate
+        title: "AI Gateway: hohe Fehlerquote"
+        condition: B
+        data:
+          - refId: A
+            datasourceUid: ai-gateway-postgres
+            relativeTimeRange:
+              from: 900
+              to: 0
+            model:
+              rawSql: >-
+                SELECT count(*) AS failed FROM requests
+                WHERE ts > now() - interval '15 minutes' AND success = false
+              format: table
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            relativeTimeRange:
+              from: 900
+              to: 0
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [5]
+              refId: B
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Mehr als 5 fehlgeschlagene Anfragen in den letzten 15 Minuten - Kaskade evtl. dauerhaft gestoert (nicht nur Tageskontingent)."

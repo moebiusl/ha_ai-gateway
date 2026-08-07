@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import json
 import os
 import re
@@ -63,6 +64,7 @@ AVAILABLE_PROVIDERS = configured_providers(OPTIONS)
 RAW_MODEL_TO_PROVIDER = raw_model_to_provider_map(OPTIONS)
 OVERRIDE_ENTITY_ID = str(OPTIONS.get("provider_override_entity_id") or "").strip() or "input_select.ai_gateway_provider_override"
 METRICS_DB_URL = INTERNAL_METRICS_DB_URL if OPTIONS.get("enable_metrics") else ""
+RESPONSE_CACHE_SECONDS = int(OPTIONS.get("response_cache_seconds") or 0)
 
 # Muss die gesamte moegliche Kaskaden-Laufzeit abdecken (Summe der
 # Provider-Timeouts aus providers.py, jeder Provider wird mit num_retries=0
@@ -451,6 +453,61 @@ def apply_entity_trimming(body):
             )
 
 
+CURRENT_TIME_LINE_RE = re.compile(r"^Current Time:.*$", re.MULTILINE)
+_response_cache = {}
+
+
+def response_cache_key(body):
+    """Cache-Key aus Modell + Anfrage-Text + Geraete-Tabelle (nach den
+    Trimming-Stufen oben), OHNE die 'Current Time: ...'-Zeile, die sich bei
+    jeder Anfrage aendert, obwohl sich am relevanten Weltzustand nichts
+    getan hat. Dedupliziert damit ident wiederholte Anfragen innerhalb
+    RESPONSE_CACHE_SECONDS - auf dem echten Server hat z.B. ein HA-Retry
+    dieselbe Frage Sekunden spaeter nochmal gestellt und dabei ein zweites
+    Mal Kontingent verbraucht."""
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return None
+    trigger = extract_trigger(messages)
+    if not trigger:
+        return None
+    system_content = ""
+    for message in messages:
+        if isinstance(message, dict) and message.get("role") == "system":
+            content = message.get("content")
+            if isinstance(content, str):
+                system_content = content
+            break
+    normalized_system = CURRENT_TIME_LINE_RE.sub("", system_content)
+    raw = f"{body.get('model')}\n{trigger}\n{normalized_system}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def cached_response(cache_key):
+    if not cache_key:
+        return None
+    entry = _response_cache.get(cache_key)
+    if entry is None:
+        return None
+    content, status_code, media_type, expires_at = entry
+    if expires_at < time.time():
+        del _response_cache[cache_key]
+        return None
+    return content, status_code, media_type
+
+
+def store_cached_response(cache_key, content, status_code, media_type):
+    if not cache_key:
+        return
+    now = time.time()
+    _response_cache[cache_key] = (content, status_code, media_type, now + RESPONSE_CACHE_SECONDS)
+    # Nebenbei abgelaufene Eintraege raeumen, statt eines eigenen Timers -
+    # bei der jetzt ueblichen Anfragerate bleibt das ein kleines Dict.
+    expired = [key for key, (_, _, _, expires_at) in _response_cache.items() if expires_at < now]
+    for key in expired:
+        del _response_cache[key]
+
+
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
     model_name, hard_override = resolve_target()
@@ -477,6 +534,13 @@ async def chat_completions(request: Request):
             f"{LITELLM_BASE_URL}/v1/chat/completions", body, forward_headers
         )
 
+    cache_key = response_cache_key(body) if RESPONSE_CACHE_SECONDS > 0 else None
+    cached = cached_response(cache_key)
+    if cached is not None:
+        content, status_code, media_type = cached
+        print("Cache-Treffer fuer identische Anfrage - kein Provider-Aufruf noetig.", flush=True)
+        return Response(content=content, status_code=status_code, media_type=media_type)
+
     try:
         async with httpx.AsyncClient(timeout=UPSTREAM_TIMEOUT) as client:
             upstream = await client.post(
@@ -487,10 +551,14 @@ async def chat_completions(request: Request):
     except httpx.HTTPError as error:
         return JSONResponse(status_code=502, content={"error": f"LiteLLM nicht erreichbar: {error}"})
 
+    media_type = upstream.headers.get("content-type", "application/json")
+    if cache_key and upstream.status_code == 200:
+        store_cached_response(cache_key, upstream.content, upstream.status_code, media_type)
+
     return Response(
         content=upstream.content,
         status_code=upstream.status_code,
-        media_type=upstream.headers.get("content-type", "application/json"),
+        media_type=media_type,
     )
 
 

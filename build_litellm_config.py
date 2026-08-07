@@ -26,7 +26,12 @@ MODEL_SPEC = {
     ),
     "ollama": lambda options: (
         f"ollama/{clean(options.get('model_ollama')) or 'qwen2.5:7b'}",
-        {"api_base": clean(options.get("ollama_url"))},
+        # max_tokens deckelt litellm-seitig Ollamas num_predict - das
+        # System-Prompt von Extended OpenAI Conversation verlangt ohnehin
+        # nur einen kurzen Ein-Satz-Antwortstil, ein Deckel begrenzt also
+        # nur den ausufernden Ausnahmefall (z.B. Wiederholungsschleifen des
+        # Modells), ohne normale Antworten abzuschneiden.
+        {"api_base": clean(options.get("ollama_url")), "max_tokens": 512},
     ),
 }
 

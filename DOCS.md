@@ -85,6 +85,7 @@ Ohne diese beiden Optionen laufen Grafanas Standardwerte (passt für den normale
 | `trim_unavailable_entities` | Entfernt Geräte im Zustand `unavailable`/`unknown` automatisch aus dem an das Modell geschickten Prompt (siehe unten), Standard `true` |
 | `exclude_camera_motion_entities` | Entfernt Kamera-/Bewegungserkennungs-Helfer (z. B. aus Frigate-Blueprints) fest aus dem Prompt, unabhängig vom Thema (siehe unten), Standard `true` |
 | `filter_entities_by_topic` | Behält nur Geräte-Domains, die per Stichwort-Heuristik zur Anfrage passen (siehe unten), Standard `false` |
+| `response_cache_seconds` | Wie lange identische Anfragen aus dem Cache beantwortet werden (siehe unten), Standard `30`, `0` deaktiviert den Cache |
 
 Mindestens **ein** Provider (Cloud-Key oder `ollama_url`) muss gesetzt sein, sonst startet der Proxy nicht.
 
@@ -105,6 +106,27 @@ Alle Filter sind defensiv an das genaue CSV-Format von Extended OpenAI Conversat
 Schlägt eine Anfrage wegen eines Kontingent-Limits fehl (Groq/OpenRouter-429-Antworten), liest der Router die Wartezeit direkt aus der Fehlermeldung des Providers (z. B. Groqs `"Please try again in 54m58s"` oder OpenRouters `X-RateLimit-Reset`-Zeitstempel) und merkt sich intern "dieser Provider ist bis dahin erschöpft". Folgeanfragen starten die Kaskade dann direkt beim nächsten noch nicht bekannt erschöpften Provider, statt jedes Mal erneut auf zwei bereits tote Provider zu warten (auf dem echten Server bis zu ~35 Sekunden zusätzliche Wartezeit vor jeder Ollama-Antwort). Läuft die geschätzte Wartezeit ab oder kommt kein bekanntes Muster in der Fehlermeldung vor, wird nichts geraten — der betroffene Provider bleibt normal Teil der Kaskade.
 
 Dieser Mechanismus braucht die geloggten Fehler aus der Metrics-Postgres und ist daher an `enable_metrics: true` gekoppelt (wie auch der traffic-basierte Status-Sensor).
+
+## Antwort-Cache: identische Anfragen nicht doppelt verarbeiten
+
+Fragt HA (z. B. per Retry nach einem Timeout) dieselbe Frage kurz hintereinander nochmal, beantwortet der Router sie aus einem kurzen In-Memory-Cache statt erneut einen Provider aufzurufen — spart Kontingent und Zeit. Der Cache-Key besteht aus Modell + Anfrage-Text + der bereits gefilterten Geräte-Tabelle (ohne die sich bei jeder Anfrage ändernde "Current Time"-Zeile), sodass sich wirklich nur *inhaltlich identische* Anfragen treffen. Nur erfolgreiche, nicht-streamende Antworten werden gecacht.
+
+`response_cache_seconds` (Standard `30`) steuert die Cache-Dauer; `0` deaktiviert den Cache komplett.
+
+## Grafana-Alert: hohe Fehlerquote
+
+Bei aktivem `enable_metrics` ist eine Alert-Regel vorprovisioniert ("AI Gateway: hohe Fehlerquote", Ordner "AI Gateway" in Grafana): löst aus, wenn in den letzten 15 Minuten mehr als 5 Anfragen fehlgeschlagen sind und das mindestens 10 Minuten anhält (kurze Ausreißer wie ein einzelner Cloud-Kontingent-Fehlschlag lösen also nicht aus). Sichtbar direkt in Grafanas Alerting-Ansicht.
+
+Für eine Benachrichtigung außerhalb von Grafana (E-Mail, Webhook an eine HA-Automation, …) muss in Grafana selbst unter **Alerting → Contact points** ein Kanal eingerichtet und der Regel zugeordnet werden — das ist nutzerspezifisch (SMTP-Zugangsdaten, Webhook-URL) und daher nicht vorprovisioniert.
+
+## Lokales Modell schneller machen
+
+Ein paar Stellschrauben für Ollama, unabhängig von diesem Add-on:
+
+- **`keep_alive` im Ollama-Add-on erhöhen** (Standard oft nur wenige Minuten): läuft das Modell zwischen Anfragen aus dem Speicher, dauert die nächste Anfrage spürbar länger, weil es erst neu geladen werden muss. Ein längerer Wert (oder `-1` für dauerhaft geladen) vermeidet das.
+- **Kleineres/schnelleres Modell testen** (z. B. eine 3B- statt 7B-Variante) — schneller auf CPU, ggf. etwas schwächer bei komplexeren Anfragen. Muss man fürs eigene Setup ausprobieren.
+- **Kleinerer Prompt hilft doppelt**: die Entity-Filter oben (siehe "Token-Sparen") reduzieren nicht nur Cloud-Kontingent-Verbrauch, sondern auch Ollamas Verarbeitungszeit, da weniger Kontext eingelesen werden muss.
+- Dieses Add-on deckelt zusätzlich `max_tokens` (512) für Ollama, als Sicherheitsnetz gegen ausufernde Generierungen, ohne normale kurze Antworten zu beeinflussen.
 
 ## Live-Status: welcher Anbieter gerade aktiv ist
 
