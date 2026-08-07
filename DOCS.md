@@ -82,8 +82,19 @@ Ohne diese beiden Optionen laufen Grafanas Standardwerte (passt für den normale
 | `enable_metrics` | Startet die mitgelieferte Postgres + Grafana (siehe Schritt 5), Standard `false` |
 | `grafana_admin_password` | Optionales Admin-Passwort für Grafana, nur relevant wenn `enable_metrics` aktiv ist |
 | `grafana_root_url` / `grafana_trusted_hostnames` | Nur bei "origin not allowed" nötig, siehe Schritt 5 |
+| `trim_unavailable_entities` | Entfernt Geräte im Zustand `unavailable`/`unknown` automatisch aus dem an das Modell geschickten Prompt (siehe unten), Standard `true` |
+| `filter_entities_by_topic` | Behält nur Geräte-Domains, die per Stichwort-Heuristik zur Anfrage passen (siehe unten), Standard `false` |
 
 Mindestens **ein** Provider (Cloud-Key oder `ollama_url`) muss gesetzt sein, sonst startet der Proxy nicht.
+
+## Token-Sparen: nur relevante Geräte an das Modell schicken
+
+Extended OpenAI Conversation schickt bei jeder Anfrage eine CSV-Tabelle **aller** für Assist freigegebenen Geräte mit ins Prompt. Der Router filtert das in zwei unabhängig zuschaltbaren Stufen, bevor die Anfrage an den gewählten Provider geht — unabhängig vom Kaskaden-Provider, bei jeder Anfrage neu:
+
+1. **`trim_unavailable_entities`** (Standard an): entfernt Geräte im Zustand `unavailable`/`unknown` — dauerhaft offline/kaputte Geräte liefern nie eine brauchbare Antwort, kosten aber trotzdem volle Tokens. Auf einem realen Setup mit vielen Integrationen waren über 50 % der Tabelle genau solche Zeilen. Kein manuelles Pflegen einer Ausschlussliste nötig: geht ein Gerät offline, verschwindet es automatisch; kommt es zurück, taucht es genauso automatisch wieder auf.
+2. **`filter_entities_by_topic`** (Standard aus, da experimentell): erkennt anhand fester deutscher Stichwörter im Anfrage-Text ein grobes Thema (z. B. "Lampe"/"Licht" → `light`, "Tür"/"Tor"/"Fenster" → `binary_sensor`/`cover`/`switch`, "Wetter"/"Temperatur" → `sensor`/`climate`) und behält nur Geräte aus den passenden Domains. Erkennt die Heuristik nichts Eindeutiges, wird **nicht** gefiltert — lieber zu viel Kontext schicken als eine Entity zu verlieren, die für die Antwort gebraucht wird. Die Stichwortliste steht als `DOMAIN_KEYWORDS` in `router.py` und lässt sich dort bei Bedarf erweitern.
+
+Beide Filter sind defensiv an das genaue CSV-Format von Extended OpenAI Conversation gekoppelt (Kopfzeile `entity_id,name,state,aliases` in einem ```csv```-Block) — passt das Format nicht (z. B. nach einem Update der Komponente), bleibt der Prompt unverändert, statt etwas falsch zu zerschneiden.
 
 ## Live-Status: welcher Anbieter gerade aktiv ist
 

@@ -1,3 +1,12 @@
+## 0.6.0
+
+### Neu: Weniger Tokens pro Anfrage - nur relevante Geraete an das Modell schicken
+- Beobachtet auf dem echten Server (System-Prompt einer echten Anfrage direkt aus der Metrics-DB analysiert): Extended OpenAI Conversation schickt bei jeder Anfrage eine CSV-Tabelle ALLER fuer Assist freigegebenen Geraete mit - 173 Entities, davon 87 (50 %) im Zustand `unavailable`/`unknown` (dauerhaft offline/kaputte Geraete, die nie eine brauchbare Antwort liefern koennen). Allein diese Zeilen machten ~54 % der Geraete-Tabelle aus (~2150 von ~3960 Tokens) - bei Groqs 100k-Token-Tagesbudget also der groesste Hebel, um mehr echte Anfragen/Tag durch die Kaskade zu bekommen, bevor auf das langsamere Ollama zurueckgefallen wird
+- `router.py`: neue `apply_entity_trimming()`, wird auf jede Anfrage angewendet, bevor sie an den gewaehlten Provider geht (unabhaengig vom Kaskaden-Provider)
+  - `trim_unavailable_entities` (Standard **an**): entfernt Zeilen mit Zustand `unavailable`/`unknown` automatisch - kein manuelles Pflegen einer Ausschlussliste in HA noetig, Geraete tauchen von selbst wieder auf, sobald sie online sind
+  - `filter_entities_by_topic` (Standard **aus**, experimentell): grobe Stichwort-Heuristik (`DOMAIN_KEYWORDS`) erkennt am Anfrage-Text ein Thema (z. B. "Tor" -> `binary_sensor`+`switch`) und behaelt nur passende Domains - erkennt sie nichts Eindeutiges, wird NICHT gefiltert, um keine fuer die Antwort noetige Entity zu verlieren
+  - Beide Filter erkennen das CSV-Format defensiv an der exakten Kopfzeile `entity_id,name,state,aliases` - passt es nicht (z. B. nach einem Update von Extended OpenAI Conversation), bleibt der Prompt unveraendert
+
 ## 0.5.11
 
 ### Fix: Kaskade brach ab, sobald ein Zwischenglied (nicht der Primaerprovider) fehlschlug

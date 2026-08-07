@@ -1,3 +1,4 @@
+import csv
 import json
 import os
 import time
@@ -144,6 +145,154 @@ def normalize_tools(body):
             tool["type"] = "function"
 
 
+ENTITY_TABLE_HEADER = "entity_id,name,state,aliases"
+UNAVAILABLE_STATES = {"unavailable", "unknown"}
+TRIM_UNAVAILABLE_ENTITIES = bool(OPTIONS.get("trim_unavailable_entities", True))
+
+# Grobe Stichwort-Heuristik: Anfrage-Text (lowercase) enthaelt eines der
+# Woerter -> die zugeordneten Domains gelten als relevant. Mehrdeutige
+# Konzepte (z.B. "Tor" = sowohl Endschalter-Sensor als auch Steuer-Switch)
+# bewusst auf mehrere Domains gemappt - im Zweifel lieber eine Domain zu
+# viel behalten als eine zu wenig.
+DOMAIN_KEYWORDS = [
+    ({"lampe", "licht", "leuchte", "beleuchtung"}, {"light"}),
+    ({"steckdose", "schalter", "stecker"}, {"switch"}),
+    ({"pumpe"}, {"switch", "sensor"}),
+    ({"rollladen", "rolladen", "vorhang", "jalousie", "rollo"}, {"cover"}),
+    ({"heizung", "thermostat", "klima"}, {"climate"}),
+    ({"musik", "lautsprecher", "fernseher", "radio"}, {"media_player"}),
+    ({"tür", "tuer", "fenster"}, {"binary_sensor", "cover"}),
+    ({"tor"}, {"binary_sensor", "switch"}),
+    ({"wetter", "temperatur", "luftfeuchtigkeit", "feuchtigkeit"}, {"sensor", "climate"}),
+    ({"einkaufsliste"}, {"todo"}),
+]
+FILTER_ENTITIES_BY_TOPIC = bool(OPTIONS.get("filter_entities_by_topic", False))
+
+
+def _split_entity_table(content):
+    """Findet die von Extended OpenAI Conversation generierte CSV-
+    Geraetetabelle im System-Prompt. Erkennt sie defensiv an der exakten
+    Kopfzeile - findet sie sich nicht (anderes/geaendertes Prompt-Format),
+    liefert die Funktion None, statt etwas Falsches zu zerschneiden.
+    Returns (lines, header_idx, end_idx, body_lines, rows) oder None."""
+    lines = content.split("\n")
+    try:
+        header_idx = lines.index(ENTITY_TABLE_HEADER)
+    except ValueError:
+        return None
+
+    end_idx = None
+    for i in range(header_idx + 1, len(lines)):
+        if lines[i].strip() == "```":
+            end_idx = i
+            break
+    if end_idx is None:
+        return None
+
+    body_lines = lines[header_idx + 1 : end_idx]
+    try:
+        rows = list(csv.reader(body_lines))
+    except csv.Error:
+        return None
+
+    return lines, header_idx, end_idx, body_lines, rows
+
+
+def trim_unavailable_entities(content):
+    """Dauerhaft offline/kaputte Geraete (state 'unavailable'/'unknown')
+    liefern nie eine brauchbare Antwort, kosten aber bei jeder einzelnen
+    Anfrage volle Tokens - auf dem echten Server machten sie ueber die
+    Haelfte der Geraete-Tabelle aus. Filtert sie automatisch raus, statt
+    dass sie manuell aus der HA-Assist-Freigabe entfernt werden muessen -
+    kommt ein Geraet wieder online, taucht es von selbst wieder auf."""
+    split = _split_entity_table(content)
+    if split is None:
+        return content, 0
+    lines, header_idx, end_idx, body_lines, rows = split
+
+    kept_lines = []
+    removed = 0
+    for line, row in zip(body_lines, rows):
+        if len(row) >= 3 and row[2].strip() in UNAVAILABLE_STATES:
+            removed += 1
+            continue
+        kept_lines.append(line)
+
+    if removed == 0:
+        return content, 0
+
+    new_lines = lines[: header_idx + 1] + kept_lines + lines[end_idx:]
+    return "\n".join(new_lines), removed
+
+
+def domains_for_trigger(trigger_text):
+    if not trigger_text:
+        return None
+    lowered = trigger_text.lower()
+    matched = set()
+    for keywords, domains in DOMAIN_KEYWORDS:
+        if any(keyword in lowered for keyword in keywords):
+            matched |= domains
+    return matched or None
+
+
+def filter_entities_by_topic(content, trigger_text):
+    """Behaelt nur Entities, deren Domain (light/switch/...) zu den anhand
+    von DOMAIN_KEYWORDS im Anfrage-Text erkannten Themen passt. Erkennt die
+    Heuristik nichts Eindeutiges, wird NICHT gefiltert - lieber zu viel
+    Kontext schicken als eine Entity zu verlieren, die fuer die Antwort
+    gebraucht wird. Deshalb standardmaessig aus (filter_entities_by_topic)."""
+    domains = domains_for_trigger(trigger_text)
+    if not domains:
+        return content, 0
+
+    split = _split_entity_table(content)
+    if split is None:
+        return content, 0
+    lines, header_idx, end_idx, body_lines, rows = split
+
+    kept_lines = []
+    removed = 0
+    for line, row in zip(body_lines, rows):
+        entity_id = row[0].strip() if row else ""
+        domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
+        if domain and domain not in domains:
+            removed += 1
+            continue
+        kept_lines.append(line)
+
+    if removed == 0:
+        return content, 0
+
+    new_lines = lines[: header_idx + 1] + kept_lines + lines[end_idx:]
+    return "\n".join(new_lines), removed
+
+
+def apply_entity_trimming(body):
+    if not (TRIM_UNAVAILABLE_ENTITIES or FILTER_ENTITIES_BY_TOPIC):
+        return
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return
+    trigger_text = extract_trigger(messages) if FILTER_ENTITIES_BY_TOPIC else None
+    for message in messages:
+        if not (isinstance(message, dict) and message.get("role") == "system"):
+            continue
+        content = message.get("content")
+        if not isinstance(content, str):
+            continue
+        total_removed = 0
+        if TRIM_UNAVAILABLE_ENTITIES:
+            content, removed = trim_unavailable_entities(content)
+            total_removed += removed
+        if FILTER_ENTITIES_BY_TOPIC:
+            content, removed = filter_entities_by_topic(content, trigger_text)
+            total_removed += removed
+        if total_removed:
+            message["content"] = content
+            print(f"{total_removed} Entities aus System-Prompt entfernt (unavailable-Filter/Themen-Filter).", flush=True)
+
+
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
     model_name, hard_override = resolve_target()
@@ -153,6 +302,7 @@ async def chat_completions(request: Request):
     body = await request.json()
     body["model"] = model_name
     normalize_tools(body)
+    apply_entity_trimming(body)
     if hard_override:
         # Harter Wechsel: bewusst kein automatisches Weiterreichen an den
         # naechsten Provider in der Kaskade, auch wenn der gewaehlte Provider
