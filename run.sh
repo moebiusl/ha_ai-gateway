@@ -35,6 +35,25 @@ if os.path.exists(path):
     print(json.load(open(path)).get('grafana_admin_password') or '')
 " 2>/dev/null || true)"
 
+# Nur gesetzt, wenn der Nutzer Grafana ueber eine andere Adresse erreicht als
+# das Add-on selbst annimmt (z.B. VPN-Bridge/Reverse-Proxy mit eigenem
+# Hostnamen/IP) - Grafanas CSRF-Check vergleicht sonst den Origin-Header
+# gegen root_url und lehnt jeden abweichenden Zugriffsweg mit "origin not
+# allowed" ab. Ohne diese Optionen bleibt Grafana bei seinen Standardwerten.
+GRAFANA_ROOT_URL="$(python3 -c "
+import json, os
+path = '/data/options.json'
+if os.path.exists(path):
+    print(json.load(open(path)).get('grafana_root_url') or '')
+" 2>/dev/null || true)"
+
+GRAFANA_TRUSTED_HOSTNAMES="$(python3 -c "
+import json, os
+path = '/data/options.json'
+if os.path.exists(path):
+    print(json.load(open(path)).get('grafana_trusted_hostnames') or '')
+" 2>/dev/null || true)"
+
 PG_PID=""
 GRAFANA_PID=""
 
@@ -100,9 +119,15 @@ if [ "$ENABLE_METRICS" = "true" ]; then
   # reinen Hostnamen (originURL.Hostname(), also OHNE Schema und Port) des
   # Origin-Headers gegen csrf_trusted_origins - und splittet den Wert an
   # LEERZEICHEN, nicht an Kommas. Schema/Port/Komma in fruehren Versuchen
-  # haben deshalb nie gematcht.
-  export GF_SERVER_ROOT_URL="http://100.97.34.101:3001/"
-  export GF_SECURITY_CSRF_TRUSTED_ORIGINS="100.97.34.101 monitoring-ha-bridge.unity-dev.de"
+  # haben deshalb nie gematcht. Beide Werte sind add-on-spezifisch (IP/
+  # Hostname des jeweiligen Nutzers) und duerfen daher nicht fest im Image
+  # stehen - nur gesetzt, wenn ueber die Optionen konfiguriert.
+  if [ -n "$GRAFANA_ROOT_URL" ]; then
+    export GF_SERVER_ROOT_URL="$GRAFANA_ROOT_URL"
+  fi
+  if [ -n "$GRAFANA_TRUSTED_HOSTNAMES" ]; then
+    export GF_SECURITY_CSRF_TRUSTED_ORIGINS="$GRAFANA_TRUSTED_HOSTNAMES"
+  fi
   if [ -n "$GRAFANA_ADMIN_PASSWORD" ]; then
     export GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_ADMIN_PASSWORD"
   fi

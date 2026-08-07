@@ -1,3 +1,24 @@
+## 0.5.10
+
+### Fix: Grafana-Zugriffs-URL/CSRF-Origins waren fest auf einen einzelnen Nutzer hartkodiert
+- Code-Review vor dem Verpacken als installierbares Add-on: `run.sh` hatte `GF_SERVER_ROOT_URL` und `GF_SECURITY_CSRF_TRUSTED_ORIGINS` fest auf die private Tailscale-IP/Domain eines einzelnen Nutzers gesetzt (Ueberbleibsel aus 0.5.5-0.5.7) - fuer jeden anderen Nutzer (oder bei geaenderter IP) haette Grafana mit "origin not allowed" verweigert, ohne dass DOCS.md diesen Schritt ueberhaupt erwaehnt
+- Neue optionale Add-on-Optionen `grafana_root_url` / `grafana_trusted_hostnames` - nur gesetzt, wenn der Nutzer sie explizit konfiguriert, sonst gelten Grafanas Standardwerte (passt fuer den normalen Fall: Zugriff ueber denselben Host wie HA)
+- `status_push.py`: veralteten Docstring korrigiert, der noch einen separaten docker-compose-Stack beschrieb - Postgres laeuft seit 0.5.0 im selben Add-on-Container
+
+## 0.5.9
+
+### Fix: Status-Sensor hat die Free-Kontingente von Groq/OpenRouter fast komplett selbst verbraucht
+- Beobachtet auf dem echten Server (Grafana-Postgres direkt abgefragt): ~4100 Provider-Anfragen in 24h, aber nur 1-2 unterscheidbare `trigger`-Werte - der Rest waren identische, alle ~60s wiederkehrende Test-Prompts ("Hello, how are you?" / "1+1?")
+- Ursache: `status_push.py` pollt `GATEWAY_HEALTH_URL` (`/health`) jede Minute, das leitet 1:1 an LiteLLMs `/health` weiter - LiteLLM schickt dabei pro Aufruf eine **echte Test-Completion an jedes konfigurierte Modell**, nicht nur einen Connectivity-Check. Bei 1440 Polls/Tag x 3 Provider ergab das ~4300 synthetische Completions/Tag
+- Reale Fehlermeldungen aus der DB bestaetigten den Effekt: Groq `tokens per day (TPD): Limit 100000, Used 95197` (bei ~5000 Tokens/Anfrage durch vollen HA-Tool-Kontext reichen dafuer nur ~20 echte Anfragen), OpenRouter `Rate limit exceeded: free-models-per-day` mit `X-RateLimit-Limit: 50` (ohne aufgeladene Credits nur 50 Anfragen/Tag) - beide Kontingente waren dadurch schon kurz nach Tagesbeginn verbraucht, jede echte Assist-Anfrage lief den Rest des Tages zwangslaeufig auf das langsamere lokale Ollama (bis zu 76s Antwortzeit beobachtet)
+- `status_push.py`: neue `provider_status_from_traffic()` ermittelt den aktiven/ausgefallenen Provider stattdessen aus dem zuletzt geloggten echten Request pro Provider in der Metrics-Postgres (`requests`-Tabelle) - kostet keine zusaetzlichen Tokens/Requests. Der bisherige `/health`-Check bleibt nur noch als Fallback, wenn `enable_metrics` nicht aktiv ist (dann gibt es keine Traffic-Historie, aus der sich der Status ableiten liesse)
+
+## 0.5.8
+
+### Fix: Ollama-Fallback konnte sich selbst nochmal aufrufen (doppelter 90s-Timeout)
+- Beobachtet auf dem echten Server (Grafana-Log): eine Tool-Call-Anfrage ("Welche Lichter sind an") kaskadierte bis zu Ollama, das nach 90s timeoutete - danach griff `litellm`s `default_fallbacks` (`= [fallback_chain[-1]]`, also `provider-ollama` selbst), weil Ollama als letztes Kaskadenglied keinen eigenen `fallbacks`-Eintrag hat - Ollama wurde dadurch ein zweites Mal 90s lang versucht, bevor die Anfrage (mit Verzoegerung von ueber 3 Minuten) doch noch durchging
+- `build_litellm_config.py`: `default_fallbacks` entfernt - `router.py` ruft ausserhalb eines harten Overrides (`disable_fallbacks=True`) immer nur den primaeren Provider auf, nie ein Kaskaden-Zwischenglied direkt, `fallbacks: [{primary: [...]}]` deckt die komplette Kaskade bereits ab
+
 ## 0.5.7
 
 ### Fix: "origin not allowed" - 0.5.6 hatte falsches Format fuer csrf_trusted_origins

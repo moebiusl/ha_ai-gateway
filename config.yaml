@@ -1,6 +1,6 @@
 name: "AI Gateway"
 description: "Kostenloser, kaskadierender Assist-Ersatz: Gemini/Groq/OpenRouter-Freikontingente mit automatischem Fallback auf lokales Ollama."
-version: "0.5.7"
+version: "0.5.10"
 slug: "ai_gateway"
 init: false
 
@@ -34,6 +34,8 @@ options:
   provider_override_entity_id: "input_select.ai_gateway_provider_override"
   enable_metrics: false
   grafana_admin_password: ""
+  grafana_root_url: ""
+  grafana_trusted_hostnames: ""
 
 schema:
   gemini_api_key: password?
@@ -49,3 +51,5 @@ schema:
   provider_override_entity_id: str?
   enable_metrics: bool?
   grafana_admin_password: password?
+  grafana_root_url: str?
+  grafana_trusted_hostnames: str?

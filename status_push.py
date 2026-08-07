@@ -4,6 +4,9 @@ import time
 
 import requests
 
+from build_litellm_config import MODEL_SPEC
+from providers import configured_providers
+
 PORT = os.environ.get("PORT", "4000")
 GATEWAY_HEALTH_URL = f"http://127.0.0.1:{PORT}/health"
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
@@ -20,6 +23,12 @@ ENTITY_ID = str(OPTIONS.get("status_sensor_entity_id") or "sensor.ai_gateway_act
 OVERRIDE_ENTITY_ID = str(OPTIONS.get("provider_override_entity_id") or "input_select.ai_gateway_provider_override").strip()
 INTERNAL_METRICS_DB_URL = "postgresql://ai_gateway:ai-gateway-internal@127.0.0.1:5432/ai_gateway"
 METRICS_DB_URL = INTERNAL_METRICS_DB_URL if OPTIONS.get("enable_metrics") else ""
+AVAILABLE_PROVIDERS = configured_providers(OPTIONS)
+# provider-Key -> volles litellm-Modell-Kuerzel (z.B. "groq/llama-3.3-70b-versatile"),
+# wie es auch custom_callback.py als "model" ins requests-Log schreibt, abzueglich
+# des "<provider>/"-Praefixes fuer den Rueck-Lookup.
+MODEL_SPEC_BY_PROVIDER = {key: MODEL_SPEC[key](OPTIONS)[0] for key in AVAILABLE_PROVIDERS}
+RAW_MODEL_TO_PROVIDER = {spec[len(key) + 1:]: key for key, spec in MODEL_SPEC_BY_PROVIDER.items()}
 
 
 def check_health():
@@ -46,6 +55,54 @@ def summarize(health_payload):
 
     active = model_name(healthy[0]) if healthy else None
     failed = [model_name(entry) for entry in unhealthy]
+    return active, failed
+
+
+def provider_status_from_traffic():
+    """Ermittelt aktiven/ausgefallenen Provider aus dem zuletzt beobachteten
+    echten Request pro Provider in der Metrics-Postgres, statt wie zuvor per
+    LiteLLM /health alle 60s eine echte Test-Completion gegen jeden
+    konfigurierten Provider zu schicken. Auf dem echten Server hat dieses
+    Polling (Faktor 3 Provider x 1440 Polls/Tag) die Tageskontingente von
+    Groq (Tokens/Tag) und OpenRouter (Requests/Tag) fast vollstaendig selbst
+    verbraucht, bevor ueberhaupt eine echte Assist-Anfrage durchkam. Gibt
+    (active, failed) zurueck oder None, wenn keine Metrics-DB verfuegbar ist."""
+    if not METRICS_DB_URL or not AVAILABLE_PROVIDERS:
+        return None
+
+    try:
+        import psycopg2
+    except ImportError:
+        return None
+
+    try:
+        connection = psycopg2.connect(METRICS_DB_URL, connect_timeout=10)
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT DISTINCT ON (provider) provider, success FROM requests ORDER BY provider, ts DESC"
+                )
+                rows = cursor.fetchall()
+        finally:
+            connection.close()
+    except Exception as error:  # noqa: BLE001 - DB-Fehler sollen die Schleife nicht stoppen
+        print(f"Konnte Provider-Status nicht aus Metrics-DB lesen: {error}", flush=True)
+        return None
+
+    latest_success_by_key = {}
+    for raw_model, success in rows:
+        key = RAW_MODEL_TO_PROVIDER.get(raw_model)
+        if key:
+            latest_success_by_key[key] = success
+
+    active = None
+    failed = []
+    for key in AVAILABLE_PROVIDERS:
+        if latest_success_by_key.get(key) is False:
+            failed.append(MODEL_SPEC_BY_PROVIDER[key])
+        elif active is None:
+            active = MODEL_SPEC_BY_PROVIDER[key]
+
     return active, failed
 
 
@@ -113,9 +170,9 @@ def push_metric(entity_id, state, unit, friendly_name, icon):
 
 
 def push_metrics_from_db():
-    """Fragt die metrics-Postgres (separater docker-compose-Stack, siehe
-    metrics/) nach Kennzahlen fuer heute und pusht sie als HA-Sensoren.
-    Ohne enable_metrics wird dieser Schritt einfach uebersprungen."""
+    """Fragt die im selben Add-on-Container laufende Metrics-Postgres nach
+    Kennzahlen fuer heute und pusht sie als HA-Sensoren. Ohne enable_metrics
+    wird dieser Schritt einfach uebersprungen."""
     if not METRICS_DB_URL:
         return
 
@@ -159,8 +216,17 @@ def push_metrics_from_db():
 
 def main():
     while True:
-        health_payload, error = check_health()
-        active, failed = summarize(health_payload)
+        traffic_status = provider_status_from_traffic()
+        if traffic_status is not None:
+            active, failed = traffic_status
+            error = None
+        else:
+            # Fallback ohne Metrics-DB: es gibt keine geloggten echten
+            # Requests, aus denen sich der Status ableiten liesse - dann
+            # bleibt nur der teurere LiteLLM-/health-Check mit echten
+            # Test-Completions.
+            health_payload, error = check_health()
+            active, failed = summarize(health_payload)
         override_state = read_override_state()
         push_state(active or "nicht erreichbar", failed, error, override_state)
         push_metrics_from_db()

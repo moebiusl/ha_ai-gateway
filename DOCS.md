@@ -61,6 +61,12 @@ Das Dashboard "AI Gateway" ist sofort da und zeigt Anfragen über Zeit, Tokens p
 
 Postgres selbst ist **nicht** von außen erreichbar (nur `127.0.0.1` im Container) — einzig Grafanas Port 3001 ist nach außen offen.
 
+**Nur falls "origin not allowed" im Browser erscheint** (typischerweise, wenn Grafana über eine andere Adresse aufgerufen wird als die, unter der HA selbst läuft — z. B. über eine separate VPN-/Tailscale-Bridge oder einen Reverse-Proxy mit eigenem Hostnamen): Grafana vergleicht den Origin-Header strikt gegen seine `root_url` und lehnt jede Abweichung ab. In dem Fall zusätzlich setzen:
+- `grafana_root_url`: die volle URL, unter der Grafana tatsächlich erreicht wird, z. B. `http://100.97.34.101:3001/`
+- `grafana_trusted_hostnames`: die dafür erlaubten Hostnamen, **ohne** Schema/Port, bei mehreren mit Leerzeichen getrennt, z. B. `100.97.34.101 grafana.example.internal`
+
+Ohne diese beiden Optionen laufen Grafanas Standardwerte (passt für den normalen Fall, Zugriff über denselben Host wie HA).
+
 ## Add-on-Konfiguration
 
 | Option | Beschreibung |
@@ -75,6 +81,7 @@ Postgres selbst ist **nicht** von außen erreichbar (nur `127.0.0.1` im Containe
 | `provider_override_entity_id` | Entity-ID des Dropdown-Helfers für den Hart-Wechsel (Standard: `input_select.ai_gateway_provider_override`) |
 | `enable_metrics` | Startet die mitgelieferte Postgres + Grafana (siehe Schritt 5), Standard `false` |
 | `grafana_admin_password` | Optionales Admin-Passwort für Grafana, nur relevant wenn `enable_metrics` aktiv ist |
+| `grafana_root_url` / `grafana_trusted_hostnames` | Nur bei "origin not allowed" nötig, siehe Schritt 5 |
 
 Mindestens **ein** Provider (Cloud-Key oder `ollama_url`) muss gesetzt sein, sonst startet der Proxy nicht.
 
