@@ -1,3 +1,9 @@
+## 0.10.1
+
+### Fix: Ollama-max_tokens-Deckel (0.8.0) hat legitime Antworten abgeschnitten
+- Beobachtet: "Sind alle Türen geschlossen?" (muss mehrere Entities aufzaehlen - bei diesem Nutzer etliche Tuer-/Fenster-Sensoren, auch vom Auto) scheiterte mit "Something went wrong: token length(496) exceeded. Increase maximum token to avoid the issue." - passt exakt zum in 0.8.0 eingefuehrten `max_tokens: 512` fuer Ollama, das die Antwort mittendrin abgeschnitten hat (Extended OpenAI Conversation meldet das als Fehler, wenn ein Tool-Call/Antworttext per `finish_reason: length` gekappt wird)
+- `build_litellm_config.py`: `max_tokens: 512` fuer Ollama wieder entfernt - der 90s-Timeout ist bereits das eigentliche Sicherheitsnetz gegen echte Endlos-Generierungen, ein hartes Token-Limit war dafuer das falsche Werkzeug und hat mehr legitime Antworten gekappt als es Ausnahmefaelle verhindert hat
+
 ## 0.10.0
 
 ### Neu: Verlaufsgrafen pro Provider mit umschaltbarem Zeitraum
