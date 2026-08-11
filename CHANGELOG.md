@@ -1,3 +1,10 @@
+## 0.8.3
+
+### Fix: Standard-Gemini-Modell aktualisiert - gemini-2.0-flash im Juni 2026 abgeschaltet
+- Beobachtet: `litellm.NotFoundError: GeminiException - ... "This model models/gemini-2.0-flash is no longer available"` - gegen die offizielle Google-Doku geprueft (nicht nur Suchergebnisse), `gemini-2.0-flash` und `gemini-2.0-flash-lite` wurden am 1. Juni 2026 komplett abgeschaltet
+- `config.yaml`/`build_litellm_config.py`: Standard auf `gemini-2.5-flash` aktualisiert (aktuell GA, volle Flash-Faehigkeiten, am naechsten am bisherigen Default) - bestehende Installationen muessen `model_gemini` in den Add-on-Optionen manuell auf einen aktuellen Wert setzen, der Code-Default greift nur bei leerem Feld
+- `DOCS.md`: Hinweis ergaenzt, unter [ai.google.dev/gemini-api/docs/models](https://ai.google.dev/gemini-api/docs/models) nachzusehen, falls das wieder passiert, sowie auf [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit) zu pruefen, ob der eigene Key ueberhaupt echtes Free-Tier-Kontingent hat (EU/EWR/UK/Schweiz-Ausschluss, siehe bestehender Hinweis)
+
 ## 0.8.2
 
 ### Neu: Ollama-Timeouts loesen jetzt auch Cooldown aus, alle-erschoepft faellt sofort auf

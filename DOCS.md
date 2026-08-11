@@ -10,7 +10,7 @@ Das Add-on allein reicht nicht — es müssen noch drei Dinge dazukommen, die si
 
 ### 1. Kostenlose API-Keys besorgen (so viele wie du willst, auch nur einer reicht)
 
-- **Gemini**: Key über Google AI Studio erstellen (kostenloses Kontingent für `gemini-2.0-flash` o.ä.). **Wichtig:** Googles Gemini-API-Nutzungsbedingungen schließen das Gratis-Kontingent für Nutzer in der EU/EWR, UK und der Schweiz vertraglich aus — dort liefert jeder Key (unabhängig vom Google-Konto) dauerhaft `limit: 0` auf allen `free_tier`-Metriken, kein Bug, kein Workaround außer echtes Google-Cloud-Billing. Wer aus diesen Regionen zugreift, sollte `gemini_api_key` einfach leer lassen und sich auf Groq/OpenRouter/Ollama verlassen.
+- **Gemini**: Key über Google AI Studio erstellen (kostenloses Kontingent für `gemini-2.5-flash` o.ä. — Modellverfügbarkeit ändert sich gelegentlich, `gemini-2.0-flash` z. B. wurde im Juni 2026 komplett abgeschaltet; bei "model ... is no longer available" in den Logs unter [ai.google.dev/gemini-api/docs/models](https://ai.google.dev/gemini-api/docs/models) nachsehen, was aktuell verfügbar ist). **Wichtig:** Googles Gemini-API-Nutzungsbedingungen schließen das Gratis-Kontingent für Nutzer in der EU/EWR, UK und der Schweiz vertraglich aus — dort liefert jeder Key (unabhängig vom Google-Konto) dauerhaft `limit: 0` auf allen `free_tier`-Metriken, kein Bug, kein Workaround außer echtes Google-Cloud-Billing. Vor dem Eintragen des Keys unter [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit) prüfen, ob echte Limits statt `0` angezeigt werden. Wer aus diesen Regionen zugreift, sollte `gemini_api_key` sonst einfach leer lassen und sich auf Groq/OpenRouter/Ollama verlassen.
 - **Groq**: Key über die Groq Console erstellen (kostenloses Kontingent, sehr schnelle Antworten für offene Modelle wie Llama 3.3)
 - **OpenRouter**: Key über OpenRouter erstellen, dort gezielt ein Modell mit `:free`-Suffix wählen
 
@@ -143,7 +143,7 @@ Ein paar Stellschrauben für Ollama, unabhängig von diesem Add-on:
 
 Das Add-on legt automatisch die Entity `sensor.ai_gateway_active_provider` in Home Assistant an (Name über `status_sensor_entity_id` änderbar) und aktualisiert sie jede Minute:
 
-- **State**: das tatsächlich verwendete Modell des aktiven Providers (z. B. `gemini/gemini-2.0-flash`, `groq/llama-3.3-70b-versatile` — LiteLLM meldet hier die konkrete Modell-Kennung, nicht unseren internen Alias)
+- **State**: das tatsächlich verwendete Modell des aktiven Providers (z. B. `gemini/gemini-2.5-flash`, `groq/llama-3.3-70b-versatile` — LiteLLM meldet hier die konkrete Modell-Kennung, nicht unseren internen Alias)
 - **Attribut `failed_providers`**: welche Provider gerade nicht erreichbar sind / deren Kontingent aufgebraucht ist
 - **Attribut `override`**: aktueller Stand des Hart-Wechsel-Helfers (`Automatisch (Kaskade)` oder ein konkreter Provider)
 - **Attribut `last_error`**: letzte Fehlermeldung, falls der Gateway selbst nicht erreichbar war
