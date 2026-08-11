@@ -1,3 +1,10 @@
+## 0.8.1
+
+### Neu: Notbremse gegen absurd grosse Anfragen
+- Beobachtet auf dem echten Server: eine einzelne Anfrage mit ueber 135000 Tokens (60x der ueblichen Groesse, vermutlich eine ausufernde Konversationshistorie in Extended OpenAI Conversation) - schlug bei Groq/OpenRouter sofort mit `context_length_exceeded` fehl UND liess Ollama zusaetzlich 90s haengen, bevor der Client ueberhaupt eine Antwort bekam. Insgesamt weit ueber drei Minuten fuer eine von vornherein aussichtslose Anfrage
+- `router.py`: neue `estimate_prompt_tokens()` (grobe Schaetzung: Zeichenlaenge/4) direkt nach dem Entity-Trimming, noch vor jedem Provider-Aufruf. Ueberschreitet die Anfrage `max_prompt_tokens_estimate` (Standard 20000, deutlich ueber normalen ~2000-2500 Tokens), wird sie sofort mit 400 abgelehnt statt durch die ganze Kaskade zu laufen. `0` deaktiviert die Bremse
+- Nebenbei beobachtet (nicht in diesem Repo behoben, da Client-seitig): nach der grossen fehlgeschlagenen Anfrage feuerte derselbe Client dutzende identische Folgeanfragen in schneller Folge - der Response-Cache aus 0.8.0 hat das bereits vollstaendig abgefangen (alle als Cache-Treffer beantwortet, kein einziger zusaetzlicher Provider-Aufruf)
+
 ## 0.8.0
 
 ### Neu: Antwort-Cache gegen doppelte Retries, Grafana-Alert, Ollama-Tuning

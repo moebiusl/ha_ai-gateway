@@ -1,6 +1,6 @@
 name: "AI Gateway"
 description: "Kostenloser, kaskadierender Assist-Ersatz: Gemini/Groq/OpenRouter-Freikontingente mit automatischem Fallback auf lokales Ollama."
-version: "0.8.0"
+version: "0.8.1"
 slug: "ai_gateway"
 init: false
 
@@ -40,6 +40,7 @@ options:
   exclude_camera_motion_entities: true
   filter_entities_by_topic: false
   response_cache_seconds: 30
+  max_prompt_tokens_estimate: 20000
 
 schema:
   gemini_api_key: password?
@@ -61,3 +62,4 @@ schema:
   exclude_camera_motion_entities: bool?
   filter_entities_by_topic: bool?
   response_cache_seconds: int?
+  max_prompt_tokens_estimate: int?

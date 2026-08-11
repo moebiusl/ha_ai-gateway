@@ -65,6 +65,7 @@ RAW_MODEL_TO_PROVIDER = raw_model_to_provider_map(OPTIONS)
 OVERRIDE_ENTITY_ID = str(OPTIONS.get("provider_override_entity_id") or "").strip() or "input_select.ai_gateway_provider_override"
 METRICS_DB_URL = INTERNAL_METRICS_DB_URL if OPTIONS.get("enable_metrics") else ""
 RESPONSE_CACHE_SECONDS = int(OPTIONS.get("response_cache_seconds") or 0)
+MAX_PROMPT_TOKENS_ESTIMATE = int(OPTIONS.get("max_prompt_tokens_estimate") or 20000)
 
 # Muss die gesamte moegliche Kaskaden-Laufzeit abdecken (Summe der
 # Provider-Timeouts aus providers.py, jeder Provider wird mit num_retries=0
@@ -508,6 +509,22 @@ def store_cached_response(cache_key, content, status_code, media_type):
         del _response_cache[key]
 
 
+def estimate_prompt_tokens(body):
+    """Grobe Tokenschaetzung (~4 Zeichen/Token) ueber den gesamten
+    messages-Inhalt. Auf dem echten Server beobachtet: eine einzelne
+    Anfrage mit ueber 135000 Tokens (60x der ueblichen Groesse, vermutlich
+    eine ausufernde Konversationshistorie) - schlug bei Groq/OpenRouter
+    sofort mit 'context_length_exceeded' fehl UND liess Ollama zusaetzlich
+    90s lang haengen, bevor der Client ueberhaupt eine Antwort bekam. Eine
+    echte Tokenizer-Bibliothek waere praeziser, aber fuer eine reine
+    Notbremse (nicht praezises Limit-Enforcement, nur 'ist das
+    offensichtlich kaputt gross') reicht die grobe Schaetzung."""
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return 0
+    return len(json.dumps(messages)) // 4
+
+
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
     model_name, hard_override = resolve_target()
@@ -518,6 +535,31 @@ async def chat_completions(request: Request):
     body["model"] = model_name
     normalize_tools(body)
     apply_entity_trimming(body)
+
+    if MAX_PROMPT_TOKENS_ESTIMATE > 0:
+        estimated_tokens = estimate_prompt_tokens(body)
+        if estimated_tokens > MAX_PROMPT_TOKENS_ESTIMATE:
+            print(
+                f"Anfrage abgelehnt: geschaetzt {estimated_tokens} Tokens, ueber dem "
+                f"Limit von {MAX_PROMPT_TOKENS_ESTIMATE} - wuerde bei Groq/OpenRouter "
+                "am Kontextlimit scheitern und Ollama minutenlang blockieren.",
+                flush=True,
+            )
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": {
+                        "message": (
+                            f"AI Gateway: Anfrage mit geschaetzt {estimated_tokens} Tokens "
+                            f"ueberschreitet das Limit von {MAX_PROMPT_TOKENS_ESTIMATE} "
+                            "(max_prompt_tokens_estimate) - vermutlich eine zu lang "
+                            "gewachsene Konversationshistorie. Bitte einen neuen "
+                            "Assist-Durchgang starten."
+                        )
+                    }
+                },
+            )
+
     if hard_override:
         # Harter Wechsel: bewusst kein automatisches Weiterreichen an den
         # naechsten Provider in der Kaskade, auch wenn der gewaehlte Provider

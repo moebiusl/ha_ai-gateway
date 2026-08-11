@@ -86,6 +86,7 @@ Ohne diese beiden Optionen laufen Grafanas Standardwerte (passt für den normale
 | `exclude_camera_motion_entities` | Entfernt Kamera-/Bewegungserkennungs-Helfer (z. B. aus Frigate-Blueprints) fest aus dem Prompt, unabhängig vom Thema (siehe unten), Standard `true` |
 | `filter_entities_by_topic` | Behält nur Geräte-Domains, die per Stichwort-Heuristik zur Anfrage passen (siehe unten), Standard `false` |
 | `response_cache_seconds` | Wie lange identische Anfragen aus dem Cache beantwortet werden (siehe unten), Standard `30`, `0` deaktiviert den Cache |
+| `max_prompt_tokens_estimate` | Lehnt Anfragen ueber dieser (grob geschaetzten) Tokenzahl sofort ab, statt sie durch die ganze Kaskade laufen zu lassen (siehe unten), Standard `20000`, `0` deaktiviert die Bremse |
 
 Mindestens **ein** Provider (Cloud-Key oder `ollama_url`) muss gesetzt sein, sonst startet der Proxy nicht.
 
@@ -112,6 +113,12 @@ Dieser Mechanismus braucht die geloggten Fehler aus der Metrics-Postgres und ist
 Fragt HA (z. B. per Retry nach einem Timeout) dieselbe Frage kurz hintereinander nochmal, beantwortet der Router sie aus einem kurzen In-Memory-Cache statt erneut einen Provider aufzurufen — spart Kontingent und Zeit. Der Cache-Key besteht aus Modell + Anfrage-Text + der bereits gefilterten Geräte-Tabelle (ohne die sich bei jeder Anfrage ändernde "Current Time"-Zeile), sodass sich wirklich nur *inhaltlich identische* Anfragen treffen. Nur erfolgreiche, nicht-streamende Antworten werden gecacht.
 
 `response_cache_seconds` (Standard `30`) steuert die Cache-Dauer; `0` deaktiviert den Cache komplett.
+
+## Notbremse: absurd große Anfragen sofort ablehnen
+
+Auf dem echten Server beobachtet: eine einzelne Anfrage mit über 135.000 Tokens (vermutlich eine ausufernde Konversationshistorie auf HA-/Extended-OpenAI-Conversation-Seite) — das ist bei Cloud-Anbietern mit ~128k-Kontextlimit von vornherein zum Scheitern verurteilt (`context_length_exceeded`) und ließ zusätzlich Ollama 90 Sekunden lang hängen, bevor der Client überhaupt eine Antwort bekam. Insgesamt kostete diese eine Anfrage weit über drei Minuten, ohne jede Chance auf Erfolg.
+
+Der Router schätzt jetzt grob die Tokenzahl jeder Anfrage (Zeichenlänge ÷ 4, keine exakte Tokenizer-Berechnung, aber ausreichend um "offensichtlich kaputt groß" zu erkennen) und lehnt sie **sofort** ab, wenn sie `max_prompt_tokens_estimate` (Standard `20000`, deutlich über normalen ~2.000–2.500 Tokens einer getrimmten Anfrage) überschreitet — ganz ohne einen einzigen Provider anzufragen. `0` deaktiviert die Bremse.
 
 ## Grafana-Alert: hohe Fehlerquote
 
