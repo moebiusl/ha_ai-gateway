@@ -65,7 +65,7 @@ RAW_MODEL_TO_PROVIDER = raw_model_to_provider_map(OPTIONS)
 OVERRIDE_ENTITY_ID = str(OPTIONS.get("provider_override_entity_id") or "").strip() or "input_select.ai_gateway_provider_override"
 METRICS_DB_URL = INTERNAL_METRICS_DB_URL if OPTIONS.get("enable_metrics") else ""
 RESPONSE_CACHE_SECONDS = int(OPTIONS.get("response_cache_seconds") or 0)
-MAX_PROMPT_TOKENS_ESTIMATE = int(OPTIONS.get("max_prompt_tokens_estimate") or 20000)
+MAX_PROMPT_TOKENS_ESTIMATE = int(OPTIONS.get("max_prompt_tokens_estimate") or 60000)
 
 # Muss die gesamte moegliche Kaskaden-Laufzeit abdecken (Summe der
 # Provider-Timeouts aus providers.py, jeder Provider wird mit num_retries=0

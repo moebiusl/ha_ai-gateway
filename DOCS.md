@@ -88,7 +88,7 @@ Ohne diese beiden Optionen laufen Grafanas Standardwerte (passt für den normale
 | `exclude_camera_motion_entities` | Entfernt Kamera-/Bewegungserkennungs-Helfer (z. B. aus Frigate-Blueprints) fest aus dem Prompt, unabhängig vom Thema (siehe unten), Standard `true` |
 | `filter_entities_by_topic` | Behält nur Geräte-Domains, die per Stichwort-Heuristik zur Anfrage passen (siehe unten), Standard `false` |
 | `response_cache_seconds` | Wie lange identische Anfragen aus dem Cache beantwortet werden (siehe unten), Standard `30`, `0` deaktiviert den Cache |
-| `max_prompt_tokens_estimate` | Lehnt Anfragen ueber dieser (grob geschaetzten) Tokenzahl sofort ab, statt sie durch die ganze Kaskade laufen zu lassen (siehe unten), Standard `20000`, `0` deaktiviert die Bremse |
+| `max_prompt_tokens_estimate` | Lehnt Anfragen ueber dieser (grob geschaetzten) Tokenzahl sofort ab, statt sie durch die ganze Kaskade laufen zu lassen (siehe unten), Standard `60000`, `0` deaktiviert die Bremse |
 | `gemini_daily_request_limit` | Fuer die geschaetzte `sensor.ai_gateway_gemini_quota_pct`-Anzeige (siehe Live-Status unten) - das eigene Tageslimit aus [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit) eintragen, Standard `10000` |
 
 Mindestens **ein** Provider (Cloud-Key oder `ollama_url`) muss gesetzt sein, sonst startet der Proxy nicht.
@@ -125,7 +125,9 @@ Fragt HA (z. B. per Retry nach einem Timeout) dieselbe Frage kurz hintereinander
 
 Auf dem echten Server beobachtet: eine einzelne Anfrage mit über 135.000 Tokens (vermutlich eine ausufernde Konversationshistorie auf HA-/Extended-OpenAI-Conversation-Seite) — das ist bei Cloud-Anbietern mit ~128k-Kontextlimit von vornherein zum Scheitern verurteilt (`context_length_exceeded`) und ließ zusätzlich Ollama 90 Sekunden lang hängen, bevor der Client überhaupt eine Antwort bekam. Insgesamt kostete diese eine Anfrage weit über drei Minuten, ohne jede Chance auf Erfolg.
 
-Der Router schätzt jetzt grob die Tokenzahl jeder Anfrage (Zeichenlänge ÷ 4, keine exakte Tokenizer-Berechnung, aber ausreichend um "offensichtlich kaputt groß" zu erkennen) und lehnt sie **sofort** ab, wenn sie `max_prompt_tokens_estimate` (Standard `20000`, deutlich über normalen ~2.000–2.500 Tokens einer getrimmten Anfrage) überschreitet — ganz ohne einen einzigen Provider anzufragen. `0` deaktiviert die Bremse.
+Der Router schätzt jetzt grob die Tokenzahl jeder Anfrage (Zeichenlänge ÷ 4, keine exakte Tokenizer-Berechnung, aber ausreichend um "offensichtlich kaputt groß" zu erkennen) und lehnt sie **sofort** ab, wenn sie `max_prompt_tokens_estimate` (Standard `60000`) überschreitet — ganz ohne einen einzigen Provider anzufragen. `0` deaktiviert die Bremse.
+
+**Achtung bei mehrstufigen Bestätigungs-Dialogen** ("Soll ich X einschalten?" → "Ja" → Ausführung): Extended OpenAI Conversation schickt bei jeder Runde die bisherige Konversation erneut mit, dazu die volle Geräte-Tabelle im System-Prompt — schon 2-3 Bestätigungsrunden in einer Sitzung können so auf über 20.000 Tokens kommen, obwohl das völlig normale Nutzung ist. Ursprünglich stand hier `20000` als Standard, das hat bei echter Mehrschritt-Nutzung ("Soll ich...?"/"Ja bitte"/Ausführung) fälschlich ausgelöst — deshalb jetzt `60000`, mit weiterhin deutlichem Abstand zum echten ~131k-Kontextlimit der Cloud-Anbieter, aber genug Spielraum für mehrere Bestätigungsrunden. Wer trotzdem gelegentlich "Anfrage überschreitet das Limit" sieht, kann den Wert weiter erhöhen (bis knapp unter das Kontextlimit des schwächsten konfigurierten Cloud-Providers) oder auf `0` setzen, um die Bremse ganz abzuschalten.
 
 ## Grafana-Alert: hohe Fehlerquote
 
@@ -144,7 +146,7 @@ Ein paar Stellschrauben für Ollama, unabhängig von diesem Add-on:
 
 ## Live-Status: welcher Anbieter gerade aktiv ist
 
-Das Add-on legt automatisch die Entity `sensor.ai_gateway_active_provider` in Home Assistant an (Name über `status_sensor_entity_id` änderbar) und aktualisiert sie jede Minute:
+Das Add-on legt automatisch die Entity `sensor.ai_gateway_active_provider` in Home Assistant an (Name über `status_sensor_entity_id` änderbar) und aktualisiert sie **alle 60 Sekunden** (`status_push.py`, siehe `POLL_INTERVAL_SECONDS`) — genauso alle unten aufgeführten Sensoren. Das Dashboard selbst muss dafür nicht neu geladen werden: sobald HA einen neuen Wert erhält, aktualisiert sich die Karte automatisch per Websocket-Push, kein eigenes Polling im Frontend nötig.
 
 - **State**: das tatsächlich verwendete Modell des aktiven Providers (z. B. `gemini/gemini-3.6-flash`, `groq/llama-3.3-70b-versatile` — LiteLLM meldet hier die konkrete Modell-Kennung, nicht unseren internen Alias)
 - **Attribut `failed_providers`**: welche Provider gerade nicht erreichbar sind / deren Kontingent aufgebraucht ist

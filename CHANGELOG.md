@@ -1,3 +1,10 @@
+## 0.9.2
+
+### Fix: Notbremse loeste bei normalen Bestaetigungs-Dialogen aus, Dashboard-Tabelle kaputt gerendert
+- Beobachtet: `max_prompt_tokens_estimate` (0.8.1, Standard 20000) hat legitime mehrstufige Bestaetigungs-Dialoge ("Soll ich X einschalten?" -> "Ja bitte" -> Ausfuehrung) blockiert, sobald die wachsende Konversationshistorie ueber 20000 Tokens kam (~20100-20150 beobachtet) - kein Angriffsfall, nur normale Nutzung. Standard auf 60000 angehoben (weiterhin deutlicher Abstand zum echten ~131k-Kontextlimit)
+- `examples/dashboard.yaml`: die Markdown-Karten nutzten YAML's gefalteten Block-Stil (`content: >`), der Zeilenumbrueche durch Leerzeichen ersetzt - eine Markdown-Tabelle braucht aber echte Zeilenumbrueche, wurde also als ein einziger Textblock gerendert statt als Tabelle. Auf `|` (Literal-Block-Stil, erhaelt Zeilenumbrueche) umgestellt und die Provider-Tabelle durch echte proportionale Balken (HTML/CSS in der Markdown-Karte) ersetzt
+- `DOCS.md`: Update-Frequenz (alle 60s, Push statt Dashboard-Polling) explizit dokumentiert
+
 ## 0.9.1
 
 ### Neu: fertiges Lovelace-Dashboard-Beispiel

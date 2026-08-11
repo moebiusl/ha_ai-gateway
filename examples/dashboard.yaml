@@ -47,7 +47,7 @@ views:
 
       - type: markdown
         title: Ausgefallene / gedrosselte Provider
-        content: >
+        content: |
           {% set failed = state_attr('sensor.ai_gateway_active_provider', 'failed_providers') %}
           {% set cooldowns = state_attr('sensor.ai_gateway_active_provider', 'cooldowns') %}
           {% if failed %}
@@ -80,13 +80,15 @@ views:
 
       - type: markdown
         title: Anfragen nach Provider (heute)
-        content: >
+        content: |
           {% set data = state_attr('sensor.ai_gateway_requests_today', 'by_provider') %}
           {% if data %}
-          | Provider | Anfragen |
-          |---|---|
+          {% set total = data.values() | sum %}
           {% for provider, count in data.items() %}
-          | {{ provider }} | {{ count }} |
+          {{ provider }} — {{ count }}
+          <div style="background: var(--divider-color); border-radius: 4px; margin: 2px 0 12px 0;">
+            <div style="background: var(--primary-color); height: 10px; border-radius: 4px; width: {{ (count / total * 100) | round(1) if total else 0 }}%;"></div>
+          </div>
           {% endfor %}
           {% else %}
           Noch keine Daten für heute.
