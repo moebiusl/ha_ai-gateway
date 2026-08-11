@@ -1,3 +1,9 @@
+## 0.8.2
+
+### Neu: Ollama-Timeouts loesen jetzt auch Cooldown aus, alle-erschoepft faellt sofort auf
+- `router.py`: `parse_retry_after_seconds()` erkennt jetzt zusaetzlich generische Timeout-Fehler (bisher nur Kontingent-429 mit bekannter Reset-Zeit) und vergibt einen festen 60s-Cooldown - verhindert, dass eine Folgeanfrage nach einem haengenden Ollama sofort wieder die vollen 90s auf denselben Provider wartet
+- Neue `all_providers_in_cooldown()`-Pruefung in `chat_completions()`: sind alle konfigurierten Provider aktuell als erschoepft markiert, lehnt der Router sofort mit klarer Fehlermeldung (inkl. geschaetzter fruehester Verfuegbarkeit) ab, statt trotzdem durch die ganze Kaskade zu laufen und am Ende doch bei Ollamas 90s-Timeout zu landen. Ein harter Override wird davon nicht beeinflusst - der wird immer versucht
+
 ## 0.8.1
 
 ### Neu: Notbremse gegen absurd grosse Anfragen

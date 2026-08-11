@@ -104,7 +104,11 @@ Alle Filter sind defensiv an das genaue CSV-Format von Extended OpenAI Conversat
 
 ## Kaskade: bekannt erschöpfte Provider automatisch überspringen
 
-Schlägt eine Anfrage wegen eines Kontingent-Limits fehl (Groq/OpenRouter-429-Antworten), liest der Router die Wartezeit direkt aus der Fehlermeldung des Providers (z. B. Groqs `"Please try again in 54m58s"` oder OpenRouters `X-RateLimit-Reset`-Zeitstempel) und merkt sich intern "dieser Provider ist bis dahin erschöpft". Folgeanfragen starten die Kaskade dann direkt beim nächsten noch nicht bekannt erschöpften Provider, statt jedes Mal erneut auf zwei bereits tote Provider zu warten (auf dem echten Server bis zu ~35 Sekunden zusätzliche Wartezeit vor jeder Ollama-Antwort). Läuft die geschätzte Wartezeit ab oder kommt kein bekanntes Muster in der Fehlermeldung vor, wird nichts geraten — der betroffene Provider bleibt normal Teil der Kaskade.
+Schlägt eine Anfrage wegen eines Kontingent-Limits fehl (Groq/OpenRouter-429-Antworten), liest der Router die Wartezeit direkt aus der Fehlermeldung des Providers (z. B. Groqs `"Please try again in 54m58s"` oder OpenRouters `X-RateLimit-Reset`-Zeitstempel) und merkt sich intern "dieser Provider ist bis dahin erschöpft". Folgeanfragen starten die Kaskade dann direkt beim nächsten noch nicht bekannt erschöpften Provider, statt jedes Mal erneut auf zwei bereits tote Provider zu warten (auf dem echten Server bis zu ~35 Sekunden zusätzliche Wartezeit vor jeder Ollama-Antwort).
+
+Ein Timeout (z. B. Ollama unter Last oder nicht erreichbar) hat keine bekannte Reset-Zeit, bekommt aber einen festen, kurzen Cooldown von 60 Sekunden — sonst würde jede Folgeanfrage erneut die vollen 90 Sekunden auf denselben gerade hängenden Provider warten. Läuft die Cooldown-Zeit ab oder kommt kein bekanntes Muster in der Fehlermeldung vor, wird nichts geraten — der betroffene Provider bleibt normal Teil der Kaskade.
+
+Sind **alle** konfigurierten Provider gerade als erschöpft markiert, lehnt der Router die Anfrage sofort mit einer klaren Fehlermeldung ab (inkl. Schätzung, wann der erste Provider wieder verfügbar ist), statt trotzdem durch die ganze Kaskade zu laufen und am Ende doch bei Ollamas 90s-Timeout zu landen. Ein harter Override (manuell gewählter Provider) wird davon nicht beeinflusst — der wird immer versucht, auch wenn er gerade auf Cooldown steht.
 
 Dieser Mechanismus braucht die geloggten Fehler aus der Metrics-Postgres und ist daher an `enable_metrics: true` gekoppelt (wie auch der traffic-basierte Status-Sensor).
 

@@ -138,6 +138,13 @@ _provider_cooldown_until = {}
 RATE_LIMIT_RESET_MS_RE = re.compile(r'"X-RateLimit-Reset"\s*:\s*"?(\d{10,})"?')
 RETRY_AFTER_SECONDS_RE = re.compile(r'"retry_after_seconds"\s*:\s*(\d+)')
 TRY_AGAIN_RE = re.compile(r"try again in (?:(\d+)m)?(\d+(?:\.\d+)?)s", re.IGNORECASE)
+# Kein Kontingent-Fehler mit bekannter Reset-Zeit, sondern ein generischer
+# Timeout (typischerweise Ollama unter Last/haengend) - keine exakte
+# Wartezeit bekannt, aber ein kurzer fester Cooldown verhindert, dass die
+# naechste Anfrage sofort wieder die vollen 90s auf denselben haengenden
+# Provider wartet, statt schnell und klar zu scheitern.
+GENERIC_TIMEOUT_RE = re.compile(r"timed out|timeout", re.IGNORECASE)
+GENERIC_TIMEOUT_COOLDOWN_SECONDS = 60
 
 
 def parse_retry_after_seconds(error_text):
@@ -164,6 +171,9 @@ def parse_retry_after_seconds(error_text):
         minutes = int(match.group(1) or 0)
         seconds = float(match.group(2))
         return minutes * 60 + seconds
+
+    if GENERIC_TIMEOUT_RE.search(error_text):
+        return GENERIC_TIMEOUT_COOLDOWN_SECONDS
 
     return None
 
@@ -193,6 +203,15 @@ def clear_provider_cooldown(raw_model):
 def provider_in_cooldown(provider_key):
     until = _provider_cooldown_until.get(provider_key)
     return until is not None and time.time() < until
+
+
+def all_providers_in_cooldown():
+    return bool(AVAILABLE_PROVIDERS) and all(provider_in_cooldown(p) for p in AVAILABLE_PROVIDERS)
+
+
+def earliest_cooldown_expiry():
+    times = [_provider_cooldown_until[p] for p in AVAILABLE_PROVIDERS if p in _provider_cooldown_until]
+    return min(times) if times else None
 
 
 def resolve_target():
@@ -530,6 +549,26 @@ async def chat_completions(request: Request):
     model_name, hard_override = resolve_target()
     if model_name is None:
         return JSONResponse(status_code=503, content={"error": "Kein Provider im AI Gateway konfiguriert."})
+
+    if not hard_override and all_providers_in_cooldown():
+        # Alle konfigurierten Provider sind bekanntermassen gerade nicht
+        # verfuegbar (Kontingent oder Timeout-Cooldown) - sofort klar
+        # ablehnen statt trotzdem durch die ganze Kaskade zu laufen und am
+        # Ende doch bei Ollamas 90s-Timeout zu landen. Bei einem harten
+        # Override wird die explizite Nutzerwahl trotzdem versucht.
+        earliest = earliest_cooldown_expiry()
+        wait_hint = ""
+        if earliest:
+            wait_hint = f" Fruehestens wieder verfuegbar: {time.strftime('%H:%M:%S', time.localtime(earliest))}."
+        print(f"Alle Provider aktuell als erschoepft markiert - Anfrage sofort abgelehnt.{wait_hint}", flush=True)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": {
+                    "message": f"AI Gateway: alle konfigurierten Provider sind aktuell als nicht verfuegbar markiert.{wait_hint}"
+                }
+            },
+        )
 
     body = await request.json()
     body["model"] = model_name
