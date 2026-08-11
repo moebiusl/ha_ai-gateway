@@ -5,7 +5,7 @@ import time
 import requests
 
 from build_litellm_config import MODEL_SPEC
-from providers import configured_providers, raw_model_to_provider_map
+from providers import PROVIDER_LABELS, configured_providers, raw_model_to_provider_map
 
 PORT = os.environ.get("PORT", "4000")
 GATEWAY_HEALTH_URL = f"http://127.0.0.1:{PORT}/health"
@@ -282,6 +282,30 @@ def push_metrics_from_db():
         "AI Gateway Ø Antwortzeit",
         "mdi:timer-outline",
     )
+
+    # Eigene Entity pro Provider (statt nur ein by_provider-Attribut oben) -
+    # nur so kann eine Home-Assistant-history-graph-Karte pro Provider eine
+    # eigene, automatisch farbige Linie zeichnen. Attribute lassen sich in
+    # Standard-HA-Verlaufskarten nicht plotten, nur State-Werte einzelner
+    # Entities.
+    for key in AVAILABLE_PROVIDERS:
+        label = PROVIDER_LABELS.get(key, key)
+        push_metric(
+            f"sensor.ai_gateway_requests_today_{key}",
+            requests_by_provider.get(key, 0),
+            "Anfragen",
+            f"AI Gateway Anfragen heute ({label})",
+            "mdi:counter",
+            {"state_class": "measurement"},
+        )
+        push_metric(
+            f"sensor.ai_gateway_tokens_today_{key}",
+            tokens_by_provider.get(key, 0),
+            "Tokens",
+            f"AI Gateway Tokens heute ({label})",
+            "mdi:counter",
+            {"state_class": "measurement"},
+        )
 
     if last_request_row:
         ts, provider, trigger, success, latency_ms, tokens_in, tokens_out = last_request_row

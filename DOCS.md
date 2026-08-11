@@ -157,13 +157,14 @@ Das Add-on legt automatisch die Entity `sensor.ai_gateway_active_provider` in Ho
 Ist `enable_metrics` aktiv, kommen zusätzlich diese Sensoren dazu:
 
 - `sensor.ai_gateway_requests_today` / `sensor.ai_gateway_tokens_today` — Summen für den laufenden Tag, jeweils mit Attribut `by_provider` (Aufschlüsselung pro Provider, z. B. `{"gemini": 47, "groq": 3, "ollama": 2}`)
+- `sensor.ai_gateway_requests_today_<provider>` / `sensor.ai_gateway_tokens_today_<provider>` (je einer pro konfiguriertem Provider, z. B. `sensor.ai_gateway_requests_today_gemini`) — dieselben Zahlen wie oben, aber als eigene Entity statt nur als Attribut, damit Standard-HA-Verlaufskarten (`history-graph`) sie als eigene, automatisch farbige Linie zeichnen können — Attribute lassen sich in solchen Karten nicht plotten
 - `sensor.ai_gateway_avg_latency_ms` — Ø-Antwortzeit über alle Provider
 - `sensor.ai_gateway_last_request` — State ist der Zeitpunkt der letzten Anfrage, Attribute: `provider`, `trigger` (auslösender Text), `success`, `latency_ms`, `tokens_in`, `tokens_out`
 - `sensor.ai_gateway_gemini_quota_pct` — nur vorhanden, wenn Gemini konfiguriert ist. State ist eine **geschätzte** Prozentzahl der heute über Gemini gelaufenen Anfragen gegen `gemini_daily_request_limit` (Standard `10000`, in Google AI Studio unter [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit) für den eigenen Account nachsehen und bei Bedarf anpassen). **Keine echte, von Google bestätigte Zahl** — Google bietet dafür keine API, nur die manuelle AI-Studio-Ansicht; die Schätzung basiert rein auf der eigenen geloggten Nutzung. Zeigt bewusst nur einen Prozentwert ohne jede Preis-/Kostenangabe
 
 Alle diese Entities lassen sich wie jeder andere Sensor auf einem Dashboard anzeigen oder für eine Benachrichtigung nutzen (z. B. "benachrichtige mich, wenn `failed_providers` nicht leer ist" oder "wenn `sensor.ai_gateway_gemini_quota_pct` über 80 % steigt").
 
-Ein fertiges Dashboard mit Status, Gemini-Kontingent-Anzeige, ausgefallenen/gedrosselten Providern, Tageskennzahlen je Provider und letzter Anfrage liegt unter [`examples/dashboard.yaml`](examples/dashboard.yaml) — Inhalt einfach per "In YAML bearbeiten" in ein neues oder bestehendes Dashboard übernehmen (Details dazu am Anfang der Datei).
+Ein fertiges Dashboard mit Status, Gemini-Kontingent-Anzeige, ausgefallenen/gedrosselten Providern, Tageskennzahlen je Provider, letzter Anfrage und **Verlaufsgrafen pro Provider mit umschaltbarem Zeitraum** (Heute / Letzte 7 Tage / Letzte 28 Tage, per Dropdown-Helfer direkt im Dashboard wählbar) liegt unter [`examples/dashboard.yaml`](examples/dashboard.yaml) — Inhalt einfach per "In YAML bearbeiten" in ein neues oder bestehendes Dashboard übernehmen. Für die Verlaufsgrafen ist einmalig ein Helfer anzulegen (Details am Anfang der Datei).
 
 ## Sicherheit
 

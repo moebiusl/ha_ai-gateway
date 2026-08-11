@@ -12,6 +12,27 @@
 # gemini_api_key konfiguriert ist. input_select.ai_gateway_provider_override
 # entsprechend anpassen, falls provider_override_entity_id in den
 # Add-on-Optionen umbenannt wurde.
+#
+# Fuer die Verlaufsgrafen unten (Zeitraum-Umschalter) einmalig einen
+# Dropdown-Helfer anlegen: Einstellungen -> Geraete & Dienste -> Helfer ->
+# Helfer hinzufuegen -> Dropdown. Entity-ID: input_select.ai_gateway_zeitraum
+# (sonst die Entity-ID unten in allen "conditions:"-Bloecken anpassen).
+# Optionen exakt so anlegen: "Heute", "Letzte 7 Tage", "Letzte 28 Tage".
+# Alternativ per configuration.yaml:
+#
+#   input_select:
+#     ai_gateway_zeitraum:
+#       name: AI Gateway Zeitraum
+#       icon: mdi:calendar-range
+#       initial: "Letzte 7 Tage"
+#       options:
+#         - "Heute"
+#         - "Letzte 7 Tage"
+#         - "Letzte 28 Tage"
+#
+# Die history-graph-Karten unten listen alle vier Provider - Zeilen fuer
+# nicht konfigurierte Provider (kein API-Key/keine ollama_url gesetzt)
+# einfach entfernen, sonst zeigen sie "nicht verfuegbar".
 
 title: AI Gateway
 views:
@@ -93,6 +114,84 @@ views:
           {% else %}
           Noch keine Daten für heute.
           {% endif %}
+
+      - type: entities
+        title: Zeitraum für Verlaufsgrafen
+        entities:
+          - entity: input_select.ai_gateway_zeitraum
+            name: Zeitraum
+
+      - type: conditional
+        conditions:
+          - entity: input_select.ai_gateway_zeitraum
+            state: "Heute"
+        card:
+          type: vertical-stack
+          cards:
+            - type: history-graph
+              title: Anfragen pro Provider — Heute
+              hours_to_show: 24
+              entities:
+                - sensor.ai_gateway_requests_today_gemini
+                - sensor.ai_gateway_requests_today_groq
+                - sensor.ai_gateway_requests_today_openrouter
+                - sensor.ai_gateway_requests_today_ollama
+            - type: history-graph
+              title: Tokens pro Provider — Heute
+              hours_to_show: 24
+              entities:
+                - sensor.ai_gateway_tokens_today_gemini
+                - sensor.ai_gateway_tokens_today_groq
+                - sensor.ai_gateway_tokens_today_openrouter
+                - sensor.ai_gateway_tokens_today_ollama
+
+      - type: conditional
+        conditions:
+          - entity: input_select.ai_gateway_zeitraum
+            state: "Letzte 7 Tage"
+        card:
+          type: vertical-stack
+          cards:
+            - type: history-graph
+              title: Anfragen pro Provider — Letzte 7 Tage
+              hours_to_show: 168
+              entities:
+                - sensor.ai_gateway_requests_today_gemini
+                - sensor.ai_gateway_requests_today_groq
+                - sensor.ai_gateway_requests_today_openrouter
+                - sensor.ai_gateway_requests_today_ollama
+            - type: history-graph
+              title: Tokens pro Provider — Letzte 7 Tage
+              hours_to_show: 168
+              entities:
+                - sensor.ai_gateway_tokens_today_gemini
+                - sensor.ai_gateway_tokens_today_groq
+                - sensor.ai_gateway_tokens_today_openrouter
+                - sensor.ai_gateway_tokens_today_ollama
+
+      - type: conditional
+        conditions:
+          - entity: input_select.ai_gateway_zeitraum
+            state: "Letzte 28 Tage"
+        card:
+          type: vertical-stack
+          cards:
+            - type: history-graph
+              title: Anfragen pro Provider — Letzte 28 Tage
+              hours_to_show: 672
+              entities:
+                - sensor.ai_gateway_requests_today_gemini
+                - sensor.ai_gateway_requests_today_groq
+                - sensor.ai_gateway_requests_today_openrouter
+                - sensor.ai_gateway_requests_today_ollama
+            - type: history-graph
+              title: Tokens pro Provider — Letzte 28 Tage
+              hours_to_show: 672
+              entities:
+                - sensor.ai_gateway_tokens_today_gemini
+                - sensor.ai_gateway_tokens_today_groq
+                - sensor.ai_gateway_tokens_today_openrouter
+                - sensor.ai_gateway_tokens_today_ollama
 
       - type: entities
         title: Letzte Anfrage

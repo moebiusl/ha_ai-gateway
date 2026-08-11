@@ -1,3 +1,9 @@
+## 0.10.0
+
+### Neu: Verlaufsgrafen pro Provider mit umschaltbarem Zeitraum
+- `status_push.py`: neue Sensoren `sensor.ai_gateway_requests_today_<provider>` / `sensor.ai_gateway_tokens_today_<provider>`, je einer pro konfiguriertem Provider - Standard-HA-Verlaufskarten (`history-graph`) koennen nur States einzelner Entities plotten, keine verschachtelten Attribute wie das bisherige `by_provider`
+- `examples/dashboard.yaml`: neuer Zeitraum-Umschalter (Dropdown-Helfer `input_select.ai_gateway_zeitraum` mit "Heute"/"Letzte 7 Tage"/"Letzte 28 Tage") plus drei `conditional`-Karten mit `history-graph` fuer Anfragen und Tokens je Provider, automatisch farbig unterschieden - alles mit Standard-HA-Kartentypen, keine zusaetzliche HACS-Karte noetig. Braucht einmalig einen manuell angelegten Helfer (Anleitung am Dateianfang)
+
 ## 0.9.2
 
 ### Fix: Notbremse loeste bei normalen Bestaetigungs-Dialogen aus, Dashboard-Tabelle kaputt gerendert
