@@ -1,0 +1,117 @@
+# Fertiges HA-Lovelace-Dashboard fuer das AI Gateway.
+#
+# Einfuegen: Einstellungen -> Dashboards -> Dashboard hinzufuegen ->
+# "Neues Dashboard" -> oben rechts auf die drei Punkte -> "In YAML
+# bearbeiten" -> Inhalt dieser Datei einfuegen.
+#
+# Nur die Kartenliste statt eines ganzen neuen Dashboards? Alles ab
+# "cards:" (Einrueckung anpassen) in ein bestehendes Dashboard/View
+# uebernehmen.
+#
+# sensor.ai_gateway_gemini_quota_pct existiert nur, wenn ein
+# gemini_api_key konfiguriert ist. input_select.ai_gateway_provider_override
+# entsprechend anpassen, falls provider_override_entity_id in den
+# Add-on-Optionen umbenannt wurde.
+
+title: AI Gateway
+views:
+  - title: AI Gateway
+    path: ai-gateway
+    icon: mdi:robot
+    cards:
+      - type: entities
+        title: Status
+        show_header_toggle: false
+        entities:
+          - entity: sensor.ai_gateway_active_provider
+            name: Aktiver Anbieter
+            icon: mdi:robot-outline
+          - entity: input_select.ai_gateway_provider_override
+            name: Hart-Wechsel
+          - type: attribute
+            entity: sensor.ai_gateway_active_provider
+            attribute: last_error
+            name: Letzter Fehler
+            icon: mdi:alert-circle-outline
+
+      - type: gauge
+        entity: sensor.ai_gateway_gemini_quota_pct
+        name: Gemini-Kontingent heute
+        unit: "%"
+        min: 0
+        max: 100
+        severity:
+          green: 0
+          yellow: 50
+          red: 85
+
+      - type: markdown
+        title: Ausgefallene / gedrosselte Provider
+        content: >
+          {% set failed = state_attr('sensor.ai_gateway_active_provider', 'failed_providers') %}
+          {% set cooldowns = state_attr('sensor.ai_gateway_active_provider', 'cooldowns') %}
+          {% if failed %}
+          **Zuletzt fehlgeschlagen:** {{ failed | join(', ') }}
+          {% else %}
+          ✅ Keine bekannten Ausfälle.
+          {% endif %}
+
+          {% if cooldowns %}
+          **Aktuell auf Cooldown:**
+          {% for provider, until in cooldowns.items() %}
+          - {{ provider }}: bis {{ until }}
+          {% endfor %}
+          {% else %}
+          ✅ Kein Provider aktuell gedrosselt.
+          {% endif %}
+
+      - type: entities
+        title: Kennzahlen heute
+        entities:
+          - entity: sensor.ai_gateway_requests_today
+            name: Anfragen heute
+            icon: mdi:counter
+          - entity: sensor.ai_gateway_tokens_today
+            name: Tokens heute
+            icon: mdi:counter
+          - entity: sensor.ai_gateway_avg_latency_ms
+            name: Ø Antwortzeit
+            icon: mdi:timer-outline
+
+      - type: markdown
+        title: Anfragen nach Provider (heute)
+        content: >
+          {% set data = state_attr('sensor.ai_gateway_requests_today', 'by_provider') %}
+          {% if data %}
+          | Provider | Anfragen |
+          |---|---|
+          {% for provider, count in data.items() %}
+          | {{ provider }} | {{ count }} |
+          {% endfor %}
+          {% else %}
+          Noch keine Daten für heute.
+          {% endif %}
+
+      - type: entities
+        title: Letzte Anfrage
+        entities:
+          - entity: sensor.ai_gateway_last_request
+            name: Zeitpunkt
+            icon: mdi:message-text-clock
+          - type: attribute
+            entity: sensor.ai_gateway_last_request
+            attribute: provider
+            name: Provider
+          - type: attribute
+            entity: sensor.ai_gateway_last_request
+            attribute: trigger
+            name: Anfrage
+          - type: attribute
+            entity: sensor.ai_gateway_last_request
+            attribute: success
+            name: Erfolgreich
+          - type: attribute
+            entity: sensor.ai_gateway_last_request
+            attribute: latency_ms
+            name: Antwortzeit
+            suffix: " ms"

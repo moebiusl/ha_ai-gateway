@@ -1,3 +1,9 @@
+## 0.9.1
+
+### Neu: fertiges Lovelace-Dashboard-Beispiel
+- `examples/dashboard.yaml` - direkt einfuegbares Dashboard fuer die in 0.9.0 hinzugekommenen Entities (Status, Gemini-Kontingent-Gauge, ausgefallene/gedrosselte Provider als Markdown, Tageskennzahlen je Provider, letzte Anfrage)
+- `DOCS.md`: minimales Inline-Beispiel durch Verweis auf die vollstaendige Datei ersetzt
+
 ## 0.9.0
 
 ### Neu: mehr Dashboard-Entities - Cooldown-Status, letzte Anfrage, Gemini-Kontingent

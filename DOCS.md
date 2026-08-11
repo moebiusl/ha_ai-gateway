@@ -161,21 +161,7 @@ Ist `enable_metrics` aktiv, kommen zusätzlich diese Sensoren dazu:
 
 Alle diese Entities lassen sich wie jeder andere Sensor auf einem Dashboard anzeigen oder für eine Benachrichtigung nutzen (z. B. "benachrichtige mich, wenn `failed_providers` nicht leer ist" oder "wenn `sensor.ai_gateway_gemini_quota_pct` über 80 % steigt").
 
-Minimales Lovelace-Beispiel (Einstellungen → Dashboards → Karte hinzufügen → "Entitäten", oder als YAML):
-
-```yaml
-type: entities
-title: AI Gateway
-entities:
-  - entity: sensor.ai_gateway_active_provider
-    name: Aktiver Anbieter
-  - entity: sensor.ai_gateway_gemini_quota_pct
-    name: Gemini-Kontingent
-  - entity: sensor.ai_gateway_last_request
-    name: Letzte Anfrage
-  - entity: sensor.ai_gateway_requests_today
-    name: Anfragen heute
-```
+Ein fertiges Dashboard mit Status, Gemini-Kontingent-Anzeige, ausgefallenen/gedrosselten Providern, Tageskennzahlen je Provider und letzter Anfrage liegt unter [`examples/dashboard.yaml`](examples/dashboard.yaml) — Inhalt einfach per "In YAML bearbeiten" in ein neues oder bestehendes Dashboard übernehmen (Details dazu am Anfang der Datei).
 
 ## Sicherheit
 
