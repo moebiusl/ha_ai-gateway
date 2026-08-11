@@ -1,6 +1,6 @@
 name: "AI Gateway"
 description: "Kostenloser, kaskadierender Assist-Ersatz: Gemini/Groq/OpenRouter-Freikontingente mit automatischem Fallback auf lokales Ollama."
-version: "0.8.3"
+version: "0.8.4"
 slug: "ai_gateway"
 init: false
 
@@ -26,7 +26,7 @@ options:
   openrouter_api_key: ""
   ollama_url: ""
   gateway_master_key: ""
-  model_gemini: "gemini-2.5-flash"
+  model_gemini: "gemini-3.6-flash"
   model_groq: "llama-3.3-70b-versatile"
   model_openrouter: "openai/gpt-oss-20b:free"
   model_ollama: "qwen2.5:7b"

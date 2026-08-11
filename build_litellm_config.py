@@ -13,7 +13,7 @@ OUTPUT_PATH = "/app/litellm-config.yaml"
 
 MODEL_SPEC = {
     "gemini": lambda options: (
-        f"gemini/{clean(options.get('model_gemini')) or 'gemini-2.5-flash'}",
+        f"gemini/{clean(options.get('model_gemini')) or 'gemini-3.6-flash'}",
         {"api_key": clean(options.get("gemini_api_key"))},
     ),
     "groq": lambda options: (

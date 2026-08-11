@@ -1,3 +1,10 @@
+## 0.8.4
+
+### Fix: gemini-2.5-flash fuer neue Google-Cloud-Projekte gesperrt
+- 0.8.3 reichte nicht: `gemini-2.5-flash` ist zwar laut allgemeiner Google-Doku noch GA gelistet, aber fuer neu angelegte Projekte/Keys gesperrt ("This model ... is no longer available to new users") - diese kontospezifische Einschraenkung taucht auf der allgemeinen Modell-Seite nicht auf, deshalb hat die Doku-Recherche aus 0.8.3 sie nicht gefunden
+- Im AI-Studio-Playground verifiziert (dort werden nur tatsaechlich fuer den eigenen Account anwaehlbare Modelle gelistet, nicht alle generell existierenden): `gemini-3.6-flash` verfuegbar - `config.yaml`/`build_litellm_config.py` Standard entsprechend aktualisiert
+- `DOCS.md`: Hinweis ergaenzt, bei erneuten "not available"-Fehlern direkt im AI-Studio-Playground nachzusehen statt sich auf die allgemeine Modell-Doku zu verlassen, da diese Konto-spezifische Sperren nicht zuverlaessig zeigt
+
 ## 0.8.3
 
 ### Fix: Standard-Gemini-Modell aktualisiert - gemini-2.0-flash im Juni 2026 abgeschaltet
