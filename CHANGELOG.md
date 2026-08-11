@@ -1,3 +1,15 @@
+## 0.9.0
+
+### Neu: mehr Dashboard-Entities - Cooldown-Status, letzte Anfrage, Gemini-Kontingent
+- Recherchiert (offizielle Google-Doku geprueft): es gibt keine API oder Response-Header, um Googles echtes Gemini-Kontingent live abzufragen - nur die manuelle Ansicht in AI Studio. Bewusst KEINE Preise/Kosten in den neuen Entities (auf Wunsch), stattdessen eine reine Prozent-Schaetzung aus der eigenen geloggten Nutzung gegen ein konfigurierbares Tageslimit
+- `router.py`: neuer `GET /internal/cooldown-status`-Endpoint - macht den bisher nur router-intern sichtbaren Cooldown-Zustand pro Provider fuer status_push.py (eigener Prozess) abrufbar
+- `status_push.py`:
+  - `sensor.ai_gateway_active_provider` bekommt ein neues Attribut `cooldowns` (welche Provider gerade uebersprungen werden und bis wann)
+  - `sensor.ai_gateway_requests_today` / `sensor.ai_gateway_tokens_today` bekommen ein `by_provider`-Attribut (Aufschluesselung pro Provider)
+  - neuer `sensor.ai_gateway_last_request` (Zeitpunkt, Provider, Anfrage-Text, Erfolg, Antwortzeit, Tokens)
+  - neuer `sensor.ai_gateway_gemini_quota_pct` (nur wenn Gemini konfiguriert) - Prozent der heutigen Gemini-Anfragen gegen `gemini_daily_request_limit` (neue Option, Standard 10000 - eigenes Limit unter aistudio.google.com/rate-limit nachsehen)
+- `DOCS.md`: Live-Status-Abschnitt komplett aktualisiert, inkl. minimalem Lovelace-Dashboard-Beispiel
+
 ## 0.8.4
 
 ### Fix: gemini-2.5-flash fuer neue Google-Cloud-Projekte gesperrt

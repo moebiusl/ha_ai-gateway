@@ -9,6 +9,7 @@ from providers import configured_providers, raw_model_to_provider_map
 
 PORT = os.environ.get("PORT", "4000")
 GATEWAY_HEALTH_URL = f"http://127.0.0.1:{PORT}/health"
+GATEWAY_COOLDOWN_URL = f"http://127.0.0.1:{PORT}/internal/cooldown-status"
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 HA_STATES_URL = "http://supervisor/core/api/states"
 POLL_INTERVAL_SECONDS = 60
@@ -28,6 +29,14 @@ AVAILABLE_PROVIDERS = configured_providers(OPTIONS)
 # wie es auch custom_callback.py als "model" ins requests-Log schreibt.
 MODEL_SPEC_BY_PROVIDER = {key: MODEL_SPEC[key](OPTIONS)[0] for key in AVAILABLE_PROVIDERS}
 RAW_MODEL_TO_PROVIDER = raw_model_to_provider_map(OPTIONS)
+# Taegliches Anfragen-Limit fuer Gemini, wie es in Google AI Studio unter
+# aistudio.google.com/rate-limit fuer den eigenen Account/Tarif angezeigt
+# wird - variiert je nach Konto, deshalb konfigurierbar statt fest im Code.
+# Keine Google-API liefert diese Zahl live, nur die AI-Studio-Oberflaeche -
+# die Prozentanzeige unten ist daher eine Schaetzung aus der eigenen
+# geloggten Nutzung gegen dieses konfigurierte Limit, keine von Google
+# bestaetigte Zahl.
+GEMINI_DAILY_REQUEST_LIMIT = int(OPTIONS.get("gemini_daily_request_limit") or 10000)
 
 
 def check_health():
@@ -40,6 +49,21 @@ def check_health():
         return response.json(), None
     except Exception as error:  # noqa: BLE001 - jeder Fehler bedeutet "aktuell nicht auswertbar"
         return None, str(error)
+
+
+def fetch_cooldown_status():
+    """Fragt router.py's In-Memory-Cooldown-Zustand ab (eigener Prozess,
+    daher nicht direkt einsehbar) - liefert {} bei jedem Fehler, damit ein
+    kurzzeitig nicht erreichbarer Router den Status-Push nicht blockiert."""
+    headers = {}
+    if MASTER_KEY:
+        headers["Authorization"] = f"Bearer {MASTER_KEY}"
+    try:
+        response = requests.get(GATEWAY_COOLDOWN_URL, headers=headers, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception:  # noqa: BLE001 - Cooldown-Anzeige ist rein informativ
+        return {}
 
 
 def summarize(health_payload):
@@ -121,7 +145,7 @@ def read_override_state():
     return None
 
 
-def push_state(state, failed_providers, error, override_state):
+def push_state(state, failed_providers, error, override_state, cooldowns=None):
     if not SUPERVISOR_TOKEN:
         print("SUPERVISOR_TOKEN fehlt, kann Status nicht nach HA pushen.", flush=True)
         return
@@ -132,6 +156,10 @@ def push_state(state, failed_providers, error, override_state):
         "failed_providers": failed_providers,
         "override": override_state or "Automatisch (Kaskade)",
         "last_checked": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        # Provider, die aktuell wegen eines erkannten Kontingent-/Timeout-
+        # Fehlers auf Cooldown stehen, mit geschaetztem Ende (siehe
+        # router.py mark_provider_cooldown) - {} wenn alles normal laeuft.
+        "cooldowns": cooldowns or {},
     }
     if error:
         attributes["last_error"] = error
@@ -147,17 +175,18 @@ def push_state(state, failed_providers, error, override_state):
         print(f"Konnte Status nicht nach HA pushen: {error}", flush=True)
 
 
-def push_metric(entity_id, state, unit, friendly_name, icon):
+def push_metric(entity_id, state, unit, friendly_name, icon, extra_attributes=None):
     if not SUPERVISOR_TOKEN:
         return
-    payload = {
-        "state": state,
-        "attributes": {
-            "friendly_name": friendly_name,
-            "icon": icon,
-            "unit_of_measurement": unit,
-        },
+    attributes = {
+        "friendly_name": friendly_name,
+        "icon": icon,
     }
+    if unit:
+        attributes["unit_of_measurement"] = unit
+    if extra_attributes:
+        attributes.update(extra_attributes)
+    payload = {"state": state, "attributes": attributes}
     headers = {
         "Authorization": f"Bearer {SUPERVISOR_TOKEN}",
         "Content-Type": "application/json",
@@ -196,14 +225,56 @@ def push_metrics_from_db():
                     """
                 )
                 request_count, total_tokens, avg_latency = cursor.fetchone()
+
+                cursor.execute(
+                    """
+                    SELECT provider, COUNT(*), COALESCE(SUM(tokens_in + tokens_out), 0)
+                    FROM requests
+                    WHERE ts >= date_trunc('day', now())
+                    GROUP BY provider
+                    """
+                )
+                by_provider_rows = cursor.fetchall()
+
+                cursor.execute(
+                    """
+                    SELECT ts, provider, trigger, success, latency_ms, tokens_in, tokens_out
+                    FROM requests
+                    ORDER BY ts DESC
+                    LIMIT 1
+                    """
+                )
+                last_request_row = cursor.fetchone()
         finally:
             connection.close()
     except Exception as error:  # noqa: BLE001 - DB-Fehler sollen die Schleife nicht stoppen
         print(f"Konnte metrics-Datenbank nicht abfragen: {error}", flush=True)
         return
 
-    push_metric("sensor.ai_gateway_requests_today", request_count, "Anfragen", "AI Gateway Anfragen heute", "mdi:counter")
-    push_metric("sensor.ai_gateway_tokens_today", total_tokens, "Tokens", "AI Gateway Tokens heute", "mdi:counter")
+    requests_by_provider = {}
+    tokens_by_provider = {}
+    for raw_model, count, tokens in by_provider_rows:
+        key = RAW_MODEL_TO_PROVIDER.get(raw_model)
+        if key:
+            requests_by_provider[key] = count
+            tokens_by_provider[key] = tokens
+
+    push_metric(
+        "sensor.ai_gateway_requests_today",
+        request_count,
+        "Anfragen",
+        "AI Gateway Anfragen heute",
+        "mdi:counter",
+        {"by_provider": requests_by_provider},
+    )
+    push_metric(
+        "sensor.ai_gateway_tokens_today",
+        total_tokens,
+        "Tokens",
+        "AI Gateway Tokens heute",
+        "mdi:counter",
+        {"by_provider": tokens_by_provider},
+    )
     push_metric(
         "sensor.ai_gateway_avg_latency_ms",
         round(float(avg_latency), 0),
@@ -211,6 +282,44 @@ def push_metrics_from_db():
         "AI Gateway Ø Antwortzeit",
         "mdi:timer-outline",
     )
+
+    if last_request_row:
+        ts, provider, trigger, success, latency_ms, tokens_in, tokens_out = last_request_row
+        push_metric(
+            "sensor.ai_gateway_last_request",
+            ts.strftime("%Y-%m-%dT%H:%M:%S%z") if ts else "unbekannt",
+            None,
+            "AI Gateway letzte Anfrage",
+            "mdi:message-text-clock",
+            {
+                "provider": provider,
+                "trigger": trigger,
+                "success": success,
+                "latency_ms": latency_ms,
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out,
+            },
+        )
+
+    if "gemini" in AVAILABLE_PROVIDERS:
+        gemini_requests_today = requests_by_provider.get("gemini", 0)
+        quota_pct = round(gemini_requests_today / GEMINI_DAILY_REQUEST_LIMIT * 100, 1)
+        push_metric(
+            "sensor.ai_gateway_gemini_quota_pct",
+            quota_pct,
+            "%",
+            "AI Gateway Gemini Kontingent",
+            "mdi:gauge",
+            {
+                "requests_today": gemini_requests_today,
+                "daily_limit": GEMINI_DAILY_REQUEST_LIMIT,
+                "note": (
+                    "Schaetzung aus eigener geloggter Nutzung gegen das konfigurierte "
+                    "Tageslimit (gemini_daily_request_limit) - Google bietet dafuer keine "
+                    "eigene API, nur die manuelle Ansicht in AI Studio."
+                ),
+            },
+        )
 
 
 def main():
@@ -227,7 +336,8 @@ def main():
             health_payload, error = check_health()
             active, failed = summarize(health_payload)
         override_state = read_override_state()
-        push_state(active or "nicht erreichbar", failed, error, override_state)
+        cooldowns = fetch_cooldown_status()
+        push_state(active or "nicht erreichbar", failed, error, override_state, cooldowns)
         push_metrics_from_db()
         time.sleep(POLL_INTERVAL_SECONDS)
 

@@ -89,6 +89,7 @@ Ohne diese beiden Optionen laufen Grafanas Standardwerte (passt für den normale
 | `filter_entities_by_topic` | Behält nur Geräte-Domains, die per Stichwort-Heuristik zur Anfrage passen (siehe unten), Standard `false` |
 | `response_cache_seconds` | Wie lange identische Anfragen aus dem Cache beantwortet werden (siehe unten), Standard `30`, `0` deaktiviert den Cache |
 | `max_prompt_tokens_estimate` | Lehnt Anfragen ueber dieser (grob geschaetzten) Tokenzahl sofort ab, statt sie durch die ganze Kaskade laufen zu lassen (siehe unten), Standard `20000`, `0` deaktiviert die Bremse |
+| `gemini_daily_request_limit` | Fuer die geschaetzte `sensor.ai_gateway_gemini_quota_pct`-Anzeige (siehe Live-Status unten) - das eigene Tageslimit aus [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit) eintragen, Standard `10000` |
 
 Mindestens **ein** Provider (Cloud-Key oder `ollama_url`) muss gesetzt sein, sonst startet der Proxy nicht.
 
@@ -148,15 +149,33 @@ Das Add-on legt automatisch die Entity `sensor.ai_gateway_active_provider` in Ho
 - **State**: das tatsächlich verwendete Modell des aktiven Providers (z. B. `gemini/gemini-3.6-flash`, `groq/llama-3.3-70b-versatile` — LiteLLM meldet hier die konkrete Modell-Kennung, nicht unseren internen Alias)
 - **Attribut `failed_providers`**: welche Provider gerade nicht erreichbar sind / deren Kontingent aufgebraucht ist
 - **Attribut `override`**: aktueller Stand des Hart-Wechsel-Helfers (`Automatisch (Kaskade)` oder ein konkreter Provider)
+- **Attribut `cooldowns`**: Provider, die aktuell wegen eines erkannten Kontingent-/Timeout-Fehlers übersprungen werden, mit geschätztem Ende (siehe "Kaskade: bekannt erschöpfte Provider automatisch überspringen" oben) — leer (`{}`), wenn alles normal läuft
 - **Attribut `last_error`**: letzte Fehlermeldung, falls der Gateway selbst nicht erreichbar war
 
-Ist `enable_metrics` aktiv, kommen zusätzlich diese Sensoren dazu (Kennzahlen für den laufenden Tag):
+Ist `enable_metrics` aktiv, kommen zusätzlich diese Sensoren dazu:
 
-- `sensor.ai_gateway_requests_today`
-- `sensor.ai_gateway_tokens_today`
-- `sensor.ai_gateway_avg_latency_ms`
+- `sensor.ai_gateway_requests_today` / `sensor.ai_gateway_tokens_today` — Summen für den laufenden Tag, jeweils mit Attribut `by_provider` (Aufschlüsselung pro Provider, z. B. `{"gemini": 47, "groq": 3, "ollama": 2}`)
+- `sensor.ai_gateway_avg_latency_ms` — Ø-Antwortzeit über alle Provider
+- `sensor.ai_gateway_last_request` — State ist der Zeitpunkt der letzten Anfrage, Attribute: `provider`, `trigger` (auslösender Text), `success`, `latency_ms`, `tokens_in`, `tokens_out`
+- `sensor.ai_gateway_gemini_quota_pct` — nur vorhanden, wenn Gemini konfiguriert ist. State ist eine **geschätzte** Prozentzahl der heute über Gemini gelaufenen Anfragen gegen `gemini_daily_request_limit` (Standard `10000`, in Google AI Studio unter [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit) für den eigenen Account nachsehen und bei Bedarf anpassen). **Keine echte, von Google bestätigte Zahl** — Google bietet dafür keine API, nur die manuelle AI-Studio-Ansicht; die Schätzung basiert rein auf der eigenen geloggten Nutzung. Zeigt bewusst nur einen Prozentwert ohne jede Preis-/Kostenangabe
 
-Alle diese Entities lassen sich wie jeder andere Sensor auf einem Dashboard anzeigen oder für eine Benachrichtigung nutzen (z. B. "benachrichtige mich, wenn `failed_providers` nicht leer ist").
+Alle diese Entities lassen sich wie jeder andere Sensor auf einem Dashboard anzeigen oder für eine Benachrichtigung nutzen (z. B. "benachrichtige mich, wenn `failed_providers` nicht leer ist" oder "wenn `sensor.ai_gateway_gemini_quota_pct` über 80 % steigt").
+
+Minimales Lovelace-Beispiel (Einstellungen → Dashboards → Karte hinzufügen → "Entitäten", oder als YAML):
+
+```yaml
+type: entities
+title: AI Gateway
+entities:
+  - entity: sensor.ai_gateway_active_provider
+    name: Aktiver Anbieter
+  - entity: sensor.ai_gateway_gemini_quota_pct
+    name: Gemini-Kontingent
+  - entity: sensor.ai_gateway_last_request
+    name: Letzte Anfrage
+  - entity: sensor.ai_gateway_requests_today
+    name: Anfragen heute
+```
 
 ## Sicherheit
 

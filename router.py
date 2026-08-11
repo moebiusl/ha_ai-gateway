@@ -670,6 +670,21 @@ async def proxy_streaming_response(url, body, headers):
     return StreamingResponse(body_iterator(), status_code=status_code, media_type=media_type)
 
 
+@app.get("/internal/cooldown-status")
+async def cooldown_status():
+    """Nur lokal erreichbar (127.0.0.1) - erlaubt status_push.py (eigener
+    Prozess, sieht router.py's In-Memory-Cooldown-Zustand sonst nicht),
+    den aktuellen Cooldown-Status pro Provider auszulesen und als
+    HA-Sensor-Attribut zu veroeffentlichen."""
+    now = time.time()
+    result = {}
+    for provider_key in AVAILABLE_PROVIDERS:
+        until = _provider_cooldown_until.get(provider_key)
+        if until is not None and now < until:
+            result[provider_key] = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(until))
+    return result
+
+
 @app.get("/v1/models")
 async def list_models(request: Request):
     forward_headers = {}
