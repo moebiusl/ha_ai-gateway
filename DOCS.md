@@ -90,6 +90,7 @@ Ohne diese beiden Optionen laufen Grafanas Standardwerte (passt für den normale
 | `response_cache_seconds` | Wie lange identische Anfragen aus dem Cache beantwortet werden (siehe unten), Standard `30`, `0` deaktiviert den Cache |
 | `max_prompt_tokens_estimate` | Lehnt Anfragen ueber dieser (grob geschaetzten) Tokenzahl sofort ab, statt sie durch die ganze Kaskade laufen zu lassen (siehe unten), Standard `60000`, `0` deaktiviert die Bremse |
 | `gemini_daily_request_limit` | Fuer die geschaetzte `sensor.ai_gateway_gemini_quota_pct`-Anzeige (siehe Live-Status unten) - das eigene Tageslimit aus [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit) eintragen, Standard `10000` |
+| `min_max_tokens` | Ignoriert ein vom Client (Extended OpenAI Conversation) mitgeschicktes `max_tokens`/`max_completion_tokens`, wenn es darunter liegt - verhindert abgeschnittene Antworten bei knapp konfiguriertem Client-Limit, Standard `1500` |
 
 Mindestens **ein** Provider (Cloud-Key oder `ollama_url`) muss gesetzt sein, sonst startet der Proxy nicht.
 

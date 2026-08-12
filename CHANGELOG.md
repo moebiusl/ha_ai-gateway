@@ -1,3 +1,10 @@
+## 0.10.2
+
+### Fix: "token length exceeded" trat trotz 0.10.1 weiter auf - Ursache lag beim Client
+- Beobachtet: derselbe Fehler ("token length(495) exceeded") kam nach dem Entfernen unseres eigenen Ollama-max_tokens-Caps (0.10.1) erneut - naheliegendster Grund: Extended OpenAI Conversation hat eine eigene "Maximum Tokens"-Einstellung, die als `max_tokens`/`max_completion_tokens` im Request an uns mitgeschickt wird und den jeweiligen Provider unabhaengig von unserer eigenen litellm-Config begrenzt
+- `router.py`: neue `relax_low_max_tokens()` - entfernt ein vom Client mitgeschicktes `max_tokens`/`max_completion_tokens` aus dem Request, wenn es unter `min_max_tokens` (neue Option, Standard 1500) liegt, damit der jeweilige Provider seinen eigenen grosszuegigeren Standard verwendet
+- `router.py`: `DOMAIN_KEYWORDS` um Muelltonnen-Stichwoerter erweitert ("Tonne", "Muelltonne", "Papiertonne", "Biotonne", "Restmuell", "Gelbe Tonne"/"Gelber Sack", "Muell", "Abfall" -> `sensor`/`calendar`) - fuer `filter_entities_by_topic`, damit z.B. eine `waste_collection_schedule`-Integration bei einer kombinierten Anfrage ("Wann wird die Papiertonne abgeholt und welche Lampen sind an") nicht faelschlich rausgefiltert wird, nur weil "Lampen" allein auf `light` gematcht haette
+
 ## 0.10.1
 
 ### Fix: Ollama-max_tokens-Deckel (0.8.0) hat legitime Antworten abgeschnitten

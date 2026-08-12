@@ -251,6 +251,25 @@ def normalize_tools(body):
             tool["type"] = "function"
 
 
+MIN_MAX_TOKENS = int(OPTIONS.get("min_max_tokens") or 1500)
+
+
+def relax_low_max_tokens(body):
+    """Extended OpenAI Conversation kann ein eigenes 'max_tokens' bzw.
+    'max_completion_tokens' im Request mitschicken (eigene Integrations-
+    Einstellung, ausserhalb unserer Kontrolle). Ist der Wert sehr knapp
+    (auf dem echten Server beobachtet: ~495-512), wird eine Antwort, die
+    mehrere Entities aufzaehlen muss, mittendrin abgeschnitten - Extended
+    OpenAI Conversation meldet das dann als Fehler statt als Teilantwort.
+    Entfernt das Feld komplett, wenn es unter MIN_MAX_TOKENS liegt, damit
+    der jeweilige Provider seinen eigenen (meist deutlich grosszuegigeren)
+    Standard verwendet, statt eine zu knappe Vorgabe zu erzwingen."""
+    for key in ("max_tokens", "max_completion_tokens"):
+        value = body.get(key)
+        if isinstance(value, (int, float)) and value < MIN_MAX_TOKENS:
+            del body[key]
+
+
 ENTITY_TABLE_HEADER = "entity_id,name,state,aliases"
 UNAVAILABLE_STATES = {"unavailable", "unknown"}
 TRIM_UNAVAILABLE_ENTITIES = bool(OPTIONS.get("trim_unavailable_entities", True))
@@ -283,6 +302,13 @@ DOMAIN_KEYWORDS = [
     ({"tor"}, {"binary_sensor", "switch"}),
     ({"wetter", "temperatur", "luftfeuchtigkeit", "feuchtigkeit"}, {"sensor", "climate"}),
     ({"einkaufsliste"}, {"todo"}),
+    (
+        {
+            "tonne", "muelltonne", "mülltonne", "papiertonne", "biotonne",
+            "restmüll", "restmuell", "gelbe tonne", "gelber sack", "müll", "muell", "abfall",
+        },
+        {"sensor", "calendar"},
+    ),
 ]
 FILTER_ENTITIES_BY_TOPIC = bool(OPTIONS.get("filter_entities_by_topic", False))
 
@@ -573,6 +599,7 @@ async def chat_completions(request: Request):
     body = await request.json()
     body["model"] = model_name
     normalize_tools(body)
+    relax_low_max_tokens(body)
     apply_entity_trimming(body)
 
     if MAX_PROMPT_TOKENS_ESTIMATE > 0:
