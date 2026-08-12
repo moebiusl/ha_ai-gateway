@@ -1,3 +1,9 @@
+## 0.11.0
+
+### Neu: eigene Anweisungen ans System-Prompt anhängen (custom_instructions)
+- Anlass: Nutzerfrage nach der Papiertonne wurde trotz freigegebener Entities korrekt beantwortet ("keine Informationen" lag an fehlender Assist-Freigabe in HA, kein Gateway-Thema), aber zusaetzlich kam der Wunsch auf, das Modell bei mehrdeutigen Faellen (mehrere Wettersensoren) auf eine bevorzugte Entity (`sensor.gw3000a_*`, die eigene Wetterstation) festzulegen
+- `router.py`: neue `apply_custom_instructions()` haengt einen frei konfigurierbaren Text (`custom_instructions`, Standard leer) ans Ende jedes System-Prompts an, vor dem Provider-Aufruf - fuer bevorzugte Entities, Verhaltensregeln oder sonstigen Kontext, unabhaengig vom Kaskaden-Provider, bei jeder Anfrage neu. Alternative waere Extended OpenAI Conversations eigenes Prompt-Template, aber zentral hier pflegen vermeidet, das mit dessen Standard-Anweisungen zu vermischen
+
 ## 0.10.2
 
 ### Fix: "token length exceeded" trat trotz 0.10.1 weiter auf - Ursache lag beim Client

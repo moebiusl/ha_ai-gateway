@@ -91,8 +91,17 @@ Ohne diese beiden Optionen laufen Grafanas Standardwerte (passt für den normale
 | `max_prompt_tokens_estimate` | Lehnt Anfragen ueber dieser (grob geschaetzten) Tokenzahl sofort ab, statt sie durch die ganze Kaskade laufen zu lassen (siehe unten), Standard `60000`, `0` deaktiviert die Bremse |
 | `gemini_daily_request_limit` | Fuer die geschaetzte `sensor.ai_gateway_gemini_quota_pct`-Anzeige (siehe Live-Status unten) - das eigene Tageslimit aus [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit) eintragen, Standard `10000` |
 | `min_max_tokens` | Ignoriert ein vom Client (Extended OpenAI Conversation) mitgeschicktes `max_tokens`/`max_completion_tokens`, wenn es darunter liegt - verhindert abgeschnittene Antworten bei knapp konfiguriertem Client-Limit, Standard `1500` |
+| `custom_instructions` | Frei formulierbarer Zusatztext, wird ans Ende jedes System-Prompts angehängt (siehe unten), Standard leer |
 
 Mindestens **ein** Provider (Cloud-Key oder `ollama_url`) muss gesetzt sein, sonst startet der Proxy nicht.
+
+## Eigene Anweisungen ergänzen (custom_instructions)
+
+Manchmal ist eine Anfrage für das Modell mehrdeutig, obwohl die richtige Entity längst freigegeben ist — z. B. wenn mehrere Wetter-/Temperatursensoren exponiert sind und unklar bleibt, welcher die "echte" lokale Quelle ist. `custom_instructions` hängt einen frei wählbaren Text ans Ende **jedes** System-Prompts an, bevor die Anfrage an den Provider geht — unabhängig vom Kaskaden-Provider, bei jeder Anfrage neu.
+
+Beispiel: `Nutze für aktuelles Wetter ausschließlich sensor.gw3000a_* (unsere lokale Wetterstation) - keine Vorhersage, nur aktuelle Werte.`
+
+Das ist bewusst freier Text ohne Format-Vorgaben — eignet sich für bevorzugte Entities, Verhaltensregeln oder sonstigen Kontext, den Extended OpenAI Conversation nicht von sich aus liefert. Alternative: denselben Hinweis direkt im Prompt-Template von Extended OpenAI Conversation selbst ergänzen (dort, wo z. B. auch die "nicht ohne Bestätigung ausführen"-Anweisung steht) — funktioniert genauso, vermischt sich aber mit dem Rest des Templates statt hier zentral gepflegt zu werden.
 
 ## Token-Sparen: nur relevante Geräte an das Modell schicken
 

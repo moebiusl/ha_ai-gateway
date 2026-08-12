@@ -465,6 +465,29 @@ def clean_garbage_aliases(content):
     return "\n".join(new_lines), changed
 
 
+CUSTOM_INSTRUCTIONS = str(OPTIONS.get("custom_instructions") or "").strip()
+
+
+def apply_custom_instructions(body):
+    """Haengt einen frei konfigurierbaren Zusatztext (custom_instructions)
+    ans Ende des System-Prompts an - z.B. um eine sonst mehrdeutige
+    Anfrage auf eine bevorzugte Entity festzulegen ('nutze sensor.gw3000a_*
+    fuer aktuelles Wetter, nicht irgendeine andere Wetter-Integration').
+    Greift nur, wenn die Option gesetzt ist; laesst den Prompt sonst
+    komplett unveraendert."""
+    if not CUSTOM_INSTRUCTIONS:
+        return
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return
+    for message in messages:
+        if isinstance(message, dict) and message.get("role") == "system":
+            content = message.get("content")
+            if isinstance(content, str):
+                message["content"] = f"{content}\n\n{CUSTOM_INSTRUCTIONS}"
+            break
+
+
 def apply_entity_trimming(body):
     if not (TRIM_UNAVAILABLE_ENTITIES or FILTER_ENTITIES_BY_TOPIC or EXCLUDE_CAMERA_MOTION_ENTITIES):
         return
@@ -601,6 +624,7 @@ async def chat_completions(request: Request):
     normalize_tools(body)
     relax_low_max_tokens(body)
     apply_entity_trimming(body)
+    apply_custom_instructions(body)
 
     if MAX_PROMPT_TOKENS_ESTIMATE > 0:
         estimated_tokens = estimate_prompt_tokens(body)
